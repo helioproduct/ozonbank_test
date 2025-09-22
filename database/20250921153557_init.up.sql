@@ -1,10 +1,10 @@
 CREATE TABLE posts (
-    id                 BIGSERIAL PRIMARY KEY,
-    title              TEXT        NOT NULL,
-    body               TEXT        NOT NULL,
-    user_id            BIGINT      NOT NULL,
-    comments_disabled  BOOLEAN     NOT NULL DEFAULT FALSE,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                  BIGSERIAL PRIMARY KEY,
+    title               TEXT        NOT NULL,
+    body                TEXT        NOT NULL,
+    user_id             BIGINT      NOT NULL CHECK(user_id >= 0),
+    comments_enabled    BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE comments (

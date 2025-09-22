@@ -1,0 +1,195 @@
+package main
+
+import (
+	"encoding/base64"
+	"fmt"
+	"myreddit/internal/model"
+	"strconv"
+	"strings"
+	"time"
+
+	btree "github.com/google/btree"
+)
+
+/*
+go get github.com/google/btree/v2
+*/
+
+// ===== cursor helpers (created_at | id) =====
+func encodeCursor(t time.Time, id int64) string {
+	raw := t.UTC().Format(time.RFC3339Nano) + "|" + strconv.FormatInt(id, 10)
+	return base64.StdEncoding.EncodeToString([]byte(raw))
+}
+
+func decodeCursor(cur string) (time.Time, int64, error) {
+	b, err := base64.StdEncoding.DecodeString(cur)
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	parts := strings.SplitN(string(b), "|", 2)
+	if len(parts) != 2 {
+		return time.Time{}, 0, fmt.Errorf("bad cursor")
+	}
+	ts, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	return ts, id, nil
+}
+
+// порядок: CreatedAt DESC, ID DESC
+func lessDesc(a, b model.Post) bool {
+	if !a.CreatedAt.Equal(b.CreatedAt) {
+		return a.CreatedAt.After(b.CreatedAt) // DESC по времени
+	}
+	return a.ID > b.ID // DESC по id
+}
+
+// ===== storage =====
+type InMemoryPostStore struct {
+	tree *btree.BTreeG[model.Post]
+	seq  int64
+}
+
+func NewInMemoryPostStore() *InMemoryPostStore {
+	return &InMemoryPostStore{
+		tree: btree.NewG[model.Post](32, lessDesc),
+	}
+}
+
+func (s *InMemoryPostStore) CreatePost(title, body string, userID int64) model.Post {
+	s.seq++
+	p := model.Post{
+		ID:        s.seq,
+		Title:     title,
+		Body:      body,
+		UserID:    userID,
+		CreatedAt: time.Now(),
+	}
+	s.tree.ReplaceOrInsert(p)
+	return p
+}
+
+// ListPostsByCursor возвращает до limit постов и nextCursor.
+// Реализовано через "peek +1": если нашли limit+1 элементов — есть следующая страница.
+func (s *InMemoryPostStore) ListPostsByCursor(limit int, after *string) ([]model.Post, *string, bool) {
+	if limit <= 0 {
+		limit = 25
+	}
+	want := limit + 1 // peek +1
+
+	var anchor *model.Post
+	if after != nil && *after != "" {
+		t, id, err := decodeCursor(*after)
+		if err == nil {
+			tmp := model.Post{CreatedAt: t, ID: id}
+			anchor = &tmp
+		}
+	}
+
+	got := make([]model.Post, 0, want)
+
+	// если есть курсор — начинаем с элементов <= anchor (в нашем порядке DESC это "ниже" курсора)
+	if anchor != nil {
+		s.tree.DescendLessOrEqual(*anchor, func(p model.Post) bool {
+			if len(got) >= want {
+				return false
+			}
+			// строго < курсора (иначе дублируем последний элемент предыдущей страницы)
+			if p.CreatedAt.Equal(anchor.CreatedAt) && p.ID == anchor.ID {
+				return true // пропускаем равный курсору и продолжаем
+			}
+			got = append(got, p)
+			return true
+		})
+	} else {
+		// без курсора — с самого верха
+		s.tree.Descend(func(p model.Post) bool {
+			if len(got) >= want {
+				return false
+			}
+			got = append(got, p)
+			return true
+		})
+	}
+
+	hasNext := len(got) > limit
+	if hasNext {
+		got = got[:limit]
+	}
+
+	var nextCursor *string
+	if len(got) > 0 {
+		last := got[len(got)-1]
+		c := encodeCursor(last.CreatedAt, last.ID)
+		nextCursor = &c
+	}
+
+	return got, nextCursor, hasNext
+}
+
+func (s *InMemoryPostStore) SetCommentsEnabled(postID int64, enabled bool) error {
+	var found *model.Post
+	// ищем пост по id (простой обход)
+	s.tree.Ascend(func(p model.Post) bool {
+		if p.ID == postID {
+			cp := p
+			found = &cp
+			return false
+		}
+		return true
+	})
+	if found == nil {
+		return fmt.Errorf("post %d not found", postID)
+	}
+
+	// обновляем
+	old := *found
+	newPost := old
+	newPost.CommentsEnabled = enabled
+
+	// заменить в дереве
+	s.tree.Delete(old)
+	s.tree.ReplaceOrInsert(newPost)
+	return nil
+}
+
+// === demo ===
+func main() {
+	store := NewInMemoryPostStore()
+
+	store.CreatePost("First", "Body1", 1)
+	time.Sleep(5 * time.Millisecond)
+	store.CreatePost("Second", "Body2", 2)
+	time.Sleep(5 * time.Millisecond)
+	store.CreatePost("Third", "Body3", 3)
+
+	// page 1
+	p1, cur1, next1 := store.ListPostsByCursor(2, nil)
+	fmt.Printf("Page1 (n=%d), hasNext=%v\n", len(p1), next1)
+	for _, p := range p1 {
+		fmt.Println(p.ID, p.Title, p.CreatedAt.Format(time.RFC3339Nano), p.CommentsEnabled)
+	}
+	// page 2
+	if next1 && cur1 != nil {
+		p2, cur2, next2 := store.ListPostsByCursor(2, cur1)
+		fmt.Printf("\nPage2 (n=%d), hasNext=%v\n", len(p2), next2)
+		for _, p := range p2 {
+			fmt.Println(p.ID, p.Title, p.CreatedAt.Format(time.RFC3339Nano))
+		}
+		_ = cur2
+	}
+
+	store.SetCommentsEnabled(1, true)
+
+	p1, cur1, next1 = store.ListPostsByCursor(2, nil)
+	fmt.Printf("Page1 (n=%d), hasNext=%v\n", len(p1), next1)
+	for _, p := range p1 {
+		fmt.Println(p.ID, p.Title, p.CreatedAt.Format(time.RFC3339Nano), p.CommentsEnabled)
+	}
+
+}
