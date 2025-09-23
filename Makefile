@@ -9,6 +9,6 @@ up:
 
 down:
 	$(DC) down
-
+	
 clear:
 	$(DC) down -v

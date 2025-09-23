@@ -16,6 +16,7 @@ const (
 
 type CommentService struct {
 	commentStorage CommentStorage
+	commentBus     CommentBus
 }
 
 type CommentStorage interface {
@@ -27,9 +28,15 @@ type CommentStorage interface {
 	GetRepliesWithCursor(ctx context.Context, req GetRepliesRequest) ([]model.Comment, error)
 }
 
-func NewCommentService(commentsStorage CommentStorage) *CommentService {
+type CommentBus interface {
+	Subscribe(ctx context.Context, postID int64) (<-chan model.Comment, error)
+	Publish(ctx context.Context, postID int64, c model.Comment) error
+}
+
+func NewCommentService(commentsStorage CommentStorage, commentBus CommentBus) *CommentService {
 	return &CommentService{
 		commentStorage: commentsStorage,
+		commentBus:     commentBus,
 	}
 }
 
@@ -37,7 +44,14 @@ func (s *CommentService) CreateComment(ctx context.Context, req CreateCommentReq
 	if err := validator.New().Struct(req); err != nil {
 		return model.Comment{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
-	return s.commentStorage.CreateComment(ctx, req)
+
+	comment, err := s.commentStorage.CreateComment(ctx, req)
+	if err != nil {
+		return model.Comment{}, err
+	}
+
+	s.commentBus.Publish(ctx, req.PostID, comment)
+	return comment, nil
 }
 
 func (s *CommentService) GetCommentByID(ctx context.Context, commentID int64) (model.Comment, error) {
@@ -191,4 +205,12 @@ func (s *CommentService) GetReplies(ctx context.Context, in pagination.PageReque
 
 	page.StartCursor, page.EndCursor = startCursor.Encode(), endCursor.Encode()
 	return page, nil
+}
+
+func (s *CommentService) Listen(ctx context.Context, postID int64) (<-chan model.Comment, error) {
+	if s.commentBus == nil {
+		return nil, fmt.Errorf("no bus configured")
+	}
+
+	return s.commentBus.Subscribe(ctx, postID)
 }

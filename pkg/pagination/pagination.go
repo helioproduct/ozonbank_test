@@ -7,10 +7,9 @@ type PageRequest struct {
 }
 
 type Page[T any] struct {
-	Count           int
-	Items           []T
-	StartCursor     *string
-	EndCursor       *string
-	HasNextPage     bool
-	HasPreviousPage bool
+	Count       int
+	Items       []T
+	StartCursor *string
+	EndCursor   *string
+	HasNextPage bool
 }
