@@ -22,9 +22,9 @@ type CommentStorage interface {
 	CreateComment(ctx context.Context, req CreateCommentRequest) (model.Comment, error)
 	GetCommentByID(ctx context.Context, commentID int64) (model.Comment, error)
 	GetCommentsByPost(ctx context.Context, postID int64, limit int) ([]model.Comment, error)
-	GetCommentsByPostAfter(ctx context.Context, req GetCommentsAfterRequest) ([]model.Comment, error)
 	GetReplies(ctx context.Context, postID, parentID int64, limit int) ([]model.Comment, error)
-	GetRepliesAfter(ctx context.Context, req GetRepliesAfterRequest) ([]model.Comment, error)
+	GetCommentsByPostWithCursor(ctx context.Context, req GetCommentsRequest) ([]model.Comment, error)
+	GetRepliesWithCursor(ctx context.Context, req GetRepliesRequest) ([]model.Comment, error)
 }
 
 func NewCommentService(commentsStorage CommentStorage) *CommentService {
@@ -37,7 +37,6 @@ func (s *CommentService) CreateComment(ctx context.Context, req CreateCommentReq
 	if err := validator.New().Struct(req); err != nil {
 		return model.Comment{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
-
 	return s.commentStorage.CreateComment(ctx, req)
 }
 
@@ -48,103 +47,148 @@ func (s *CommentService) GetCommentByID(ctx context.Context, commentID int64) (m
 	return s.commentStorage.GetCommentByID(ctx, commentID)
 }
 
-func (s *CommentService) GetCommentsByPost(ctx context.Context, req pagination.PageRequest, postID int64) (pagination.Page[model.Comment], error) {
-	limit := req.Limit
+func (s *CommentService) GetCommentsByPost(ctx context.Context, in pagination.PageRequest, postID int64) (pagination.Page[model.Comment], error) {
+	var (
+		items []model.Comment
+		err   error
+		page  pagination.Page[model.Comment]
+	)
+
+	if err := validatePagination(in); err != nil {
+		return page, err
+	}
+
+	limit := in.Limit
 	if limit <= 0 {
 		limit = DefaultCommentsLimit
 	}
+	if limit > MaxCommentsLimit {
+		limit = MaxCommentsLimit
+	}
 	peek := limit + 1
 
-	var comments []model.Comment
-	var err error
+	afterProvided := in.AfterCursor != nil && *in.AfterCursor != ""
+	beforeProvided := in.BeforeCursor != nil && *in.BeforeCursor != ""
 
-	if req.AfterCursor == nil || *req.AfterCursor == "" {
-		comments, err = s.commentStorage.GetCommentsByPost(ctx, postID, peek)
+	switch {
+	case !afterProvided && !beforeProvided:
+		items, err = s.commentStorage.GetCommentsByPost(ctx, postID, peek)
 		if err != nil {
-			return pagination.Page[model.Comment]{}, err
+			return page, err
 		}
-	} else {
-		cur, err := pagination.Decode(*req.AfterCursor)
+
+	default:
+		req, err := toGetCommentsRequest(postID, in)
 		if err != nil {
-			return pagination.Page[model.Comment]{}, err
+			return page, err
 		}
-		comments, err = s.commentStorage.GetCommentsByPostAfter(ctx, GetCommentsRequest{
-			PostID:    postID,
-			CreatedAt: cur.CreatedAt,
-			CommentID: cur.ID,
-			Limit:     peek,
-		})
+		req.Limit = peek
+
+		items, err = s.commentStorage.GetCommentsByPostWithCursor(ctx, req)
 		if err != nil {
-			return pagination.Page[model.Comment]{}, err
+			return page, err
 		}
 	}
 
-	page := pagination.Page[model.Comment]{}
-	if len(comments) == 0 {
+	if len(items) == 0 {
+		page.Items = nil
+		page.Count = 0
+		page.HasNextPage = false
+		page.StartCursor = nil
+		page.EndCursor = nil
 		return page, nil
 	}
 
-	if len(comments) > limit {
+	if len(items) > limit {
 		page.HasNextPage = true
-		comments = comments[:limit]
+		items = items[:limit]
 	}
-	page.Items = comments
-	page.Count = len(comments)
 
-	last := comments[len(comments)-1]
-	end := pagination.Encode(pagination.Cursor{CreatedAt: last.CreatedAt, ID: last.ID})
-	page.EndCursor = &end
+	page.Items = items
+	page.Count = len(items)
 
+	startCursor := pagination.Cursor{
+		CreatedAt: items[0].CreatedAt,
+		ID:        items[0].ID,
+	}
+	endCursor := pagination.Cursor{
+		CreatedAt: items[len(items)-1].CreatedAt,
+		ID:        items[len(items)-1].ID,
+	}
+
+	page.StartCursor, page.EndCursor = startCursor.Encode(), endCursor.Encode()
 	return page, nil
 }
 
-func (s *CommentService) GetReplies(ctx context.Context, req pagination.PageRequest, postID, parentID int64) (pagination.Page[model.Comment], error) {
-	limit := req.Limit
+func (s *CommentService) GetReplies(ctx context.Context, in pagination.PageRequest, postID, parentID int64) (pagination.Page[model.Comment], error) {
+	var (
+		items []model.Comment
+		err   error
+		page  pagination.Page[model.Comment]
+	)
+
+	if err := validatePagination(in); err != nil {
+		return page, err
+	}
+
+	limit := in.Limit
 	if limit <= 0 {
 		limit = DefaultCommentsLimit
 	}
+	if limit > MaxCommentsLimit {
+		limit = MaxCommentsLimit
+	}
 	peek := limit + 1
 
-	var replies []model.Comment
-	var err error
+	afterProvided := in.AfterCursor != nil && *in.AfterCursor != ""
+	beforeProvided := in.BeforeCursor != nil && *in.BeforeCursor != ""
 
-	if req.AfterCursor == nil || *req.AfterCursor == "" {
-		replies, err = s.commentStorage.GetReplies(ctx, postID, parentID, peek)
+	switch {
+	case !afterProvided && !beforeProvided:
+		items, err = s.commentStorage.GetReplies(ctx, postID, parentID, peek)
 		if err != nil {
-			return pagination.Page[model.Comment]{}, err
+			return page, err
 		}
-	} else {
-		cur, err := pagination.Decode(*req.AfterCursor)
+
+	default:
+		req, err := toGetRepliesRequest(postID, parentID, in)
 		if err != nil {
-			return pagination.Page[model.Comment]{}, err
+			return page, err
 		}
-		replies, err = s.commentStorage.GetRepliesAfter(ctx, GetRepliesAfterRequest{
-			PostID:    postID,
-			ParentID:  parentID,
-			CreatedAt: cur.CreatedAt,
-			CommentID: cur.ID,
-			Limit:     peek,
-		})
+		req.Limit = peek
+
+		items, err = s.commentStorage.GetRepliesWithCursor(ctx, req)
 		if err != nil {
-			return pagination.Page[model.Comment]{}, err
+			return page, err
 		}
 	}
 
-	page := pagination.Page[model.Comment]{}
-	if len(replies) == 0 {
+	if len(items) == 0 {
+		page.Items = nil
+		page.Count = 0
+		page.HasNextPage = false
+		page.StartCursor = nil
+		page.EndCursor = nil
 		return page, nil
 	}
 
-	if len(replies) > limit {
+	if len(items) > limit {
 		page.HasNextPage = true
-		replies = replies[:limit]
+		items = items[:limit]
 	}
-	page.Items = replies
-	page.Count = len(replies)
 
-	last := replies[len(replies)-1]
-	end := pagination.Encode(pagination.Cursor{CreatedAt: last.CreatedAt, ID: last.ID})
-	page.EndCursor = &end
+	page.Items = items
+	page.Count = len(items)
 
+	startCursor := pagination.Cursor{
+		CreatedAt: items[0].CreatedAt,
+		ID:        items[0].ID,
+	}
+	endCursor := pagination.Cursor{
+		CreatedAt: items[len(items)-1].CreatedAt,
+		ID:        items[len(items)-1].ID,
+	}
+
+	page.StartCursor, page.EndCursor = startCursor.Encode(), endCursor.Encode()
 	return page, nil
 }
