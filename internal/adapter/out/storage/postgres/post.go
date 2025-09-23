@@ -20,9 +20,7 @@ const (
 )
 
 var (
-	ErrBuildingQuery  = errors.New("error building sql-query")
-	ErrInvalidRequest = errors.New("invalid request")
-	ErrNotFound       = errors.New("not found")
+	ErrBuildingQuery = errors.New("error building sql-query")
 )
 
 type PostStorage struct {
@@ -41,7 +39,7 @@ func (s *PostStorage) CreatePost(ctx context.Context, req service.CreatePostRequ
 	var out model.Post
 
 	if err := validator.New().Struct(req); err != nil {
-		return model.Post{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		return model.Post{}, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
 	}
 
 	query, args, err := sq.
@@ -114,7 +112,7 @@ func (s *PostStorage) GetPostByID(ctx context.Context, postID int64) (model.Post
 		&out.CreatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return out, ErrNotFound
+			return out, service.ErrNotFound
 		}
 		return out, fmt.Errorf("exec select post by id: %w", err)
 	}
@@ -183,7 +181,7 @@ func (s *PostStorage) GetPostsAfter(ctx context.Context, req service.GetPostsAft
 	}
 
 	if err := validator.New().Struct(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		return nil, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
 	}
 
 	query, args, err := sq.
@@ -258,7 +256,7 @@ func (s *PostStorage) GetPostAuthorID(ctx context.Context, postID int64) (int64,
 	var authorID int64
 	if err := tr.QueryRow(ctx, query, args...).Scan(&authorID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, ErrNotFound
+			return 0, service.ErrNotFound
 		}
 		return 0, fmt.Errorf("exec select author_id: %w", err)
 	}
@@ -282,7 +280,7 @@ func (s *PostStorage) SetCommentsEnabled(ctx context.Context, postID int64, enab
 	var dummy int64
 	if err := tr.QueryRow(ctx, query, args...).Scan(&dummy); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
+			return service.ErrNotFound
 		}
 		return fmt.Errorf("exec update comments_enabled: %w", err)
 	}

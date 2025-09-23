@@ -33,7 +33,7 @@ func (s *CommentStorage) CreateComment(ctx context.Context, req service.CreateCo
 	var out model.Comment
 
 	if err := validator.New().Struct(req); err != nil {
-		return out, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		return out, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
 	}
 
 	query, args, err := sq.
@@ -105,7 +105,7 @@ func (s *CommentStorage) GetCommentByID(ctx context.Context, commentID int64) (m
 		&out.CreatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return out, ErrNotFound
+			return out, service.ErrNotFound
 		}
 		return out, fmt.Errorf("exec select comment by id: %w", err)
 	}
@@ -175,7 +175,7 @@ func (s *CommentStorage) GetCommentsByPostAfter(ctx context.Context, req service
 	}
 
 	if err := validator.New().Struct(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		return nil, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
 	}
 
 	query, args, err := sq.
@@ -297,7 +297,7 @@ func (s *CommentStorage) GetRepliesAfter(ctx context.Context, req service.GetRep
 		req.Limit = DefaultCommentsLimit
 	}
 	if err := validator.New().Struct(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		return nil, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
 	}
 
 	query, args, err := sq.
