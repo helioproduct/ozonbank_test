@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"myreddit/internal/model"
+	"myreddit/internal/service"
 	"myreddit/pkg/tableinfo"
-	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	trmpgx "github.com/avito-tech/go-transaction-manager/drivers/pgxv5/v2"
@@ -37,14 +37,7 @@ func NewPostStorage(pool *pgxpool.Pool, getter *trmpgx.CtxGetter) *PostStorage {
 	}
 }
 
-type CreatePostRequest struct {
-	UserID          int64  `validate:"required,gt=0"`
-	Title           string `validate:"required"`
-	Text            string `validate:"required"`
-	CommentsEnabled bool
-}
-
-func (s *PostStorage) CreatePost(ctx context.Context, req CreatePostRequest) (model.Post, error) {
+func (s *PostStorage) CreatePost(ctx context.Context, req service.CreatePostRequest) (model.Post, error) {
 	var out model.Post
 
 	if err := validator.New().Struct(req); err != nil {
@@ -184,13 +177,7 @@ func (s *PostStorage) GetPosts(ctx context.Context, limit int) ([]model.Post, er
 	return out, nil
 }
 
-type GetPostsAfterRequest struct {
-	AfterCreatedAt time.Time `validate:"required"`
-	AfterID        int64     `validate:"gte=0"`
-	Limit          int       `validate:"gt=0"`
-}
-
-func (s *PostStorage) GetPostsAfter(ctx context.Context, req GetPostsAfterRequest) ([]model.Post, error) {
+func (s *PostStorage) GetPostsAfter(ctx context.Context, req service.GetPostsAfterRequest) ([]model.Post, error) {
 	if req.Limit <= 0 {
 		req.Limit = DefaultPostsLimit
 	}

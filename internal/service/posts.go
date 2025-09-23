@@ -1,5 +1,8 @@
 package service
 
+type PostStorage interface {
+}
+
 type PostService struct {
 }
 
