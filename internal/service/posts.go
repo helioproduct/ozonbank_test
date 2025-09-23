@@ -11,6 +11,7 @@ import (
 
 const (
 	DefaultPostsLimit = 50
+	MaxPostsLimit     = 250
 )
 
 type PostStorage interface {
@@ -18,6 +19,7 @@ type PostStorage interface {
 	GetPostByID(ctx context.Context, postID int64) (model.Post, error)
 	GetPosts(ctx context.Context, limit int) ([]model.Post, error)
 	GetPostsAfter(ctx context.Context, req GetPostsAfterRequest) ([]model.Post, error)
+
 	GetPostAuthorID(ctx context.Context, postID int64) (int64, error)
 	SetCommentsEnabled(ctx context.Context, postID int64, enabled bool) error
 }
@@ -74,9 +76,9 @@ func (s *PostService) GetPosts(ctx context.Context, req pagination.PageRequest) 
 			return pagination.Page[model.Post]{}, err
 		}
 		posts, err = s.postStorage.GetPostsAfter(ctx, GetPostsAfterRequest{
-			AfterCreatedAt: cur.CreatedAt,
-			AfterID:        cur.ID,
-			Limit:          peek,
+			CreatedAt: cur.CreatedAt,
+			PostID:    cur.ID,
+			Limit:     peek,
 		})
 		if err != nil {
 			return pagination.Page[model.Post]{}, err

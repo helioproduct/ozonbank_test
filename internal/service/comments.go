@@ -11,6 +11,7 @@ import (
 
 const (
 	DefaultCommentsLimit = 50
+	MaxCommentsLimit     = 250
 )
 
 type CommentService struct {
@@ -67,11 +68,11 @@ func (s *CommentService) GetCommentsByPost(ctx context.Context, req pagination.P
 		if err != nil {
 			return pagination.Page[model.Comment]{}, err
 		}
-		comments, err = s.commentStorage.GetCommentsByPostAfter(ctx, GetCommentsAfterRequest{
-			PostID:         postID,
-			AfterCreatedAt: cur.CreatedAt,
-			AfterID:        cur.ID,
-			Limit:          peek,
+		comments, err = s.commentStorage.GetCommentsByPostAfter(ctx, GetCommentsRequest{
+			PostID:    postID,
+			CreatedAt: cur.CreatedAt,
+			CommentID: cur.ID,
+			Limit:     peek,
 		})
 		if err != nil {
 			return pagination.Page[model.Comment]{}, err
@@ -118,11 +119,11 @@ func (s *CommentService) GetReplies(ctx context.Context, req pagination.PageRequ
 			return pagination.Page[model.Comment]{}, err
 		}
 		replies, err = s.commentStorage.GetRepliesAfter(ctx, GetRepliesAfterRequest{
-			PostID:         postID,
-			ParentID:       parentID,
-			AfterCreatedAt: cur.CreatedAt,
-			AfterID:        cur.ID,
-			Limit:          peek,
+			PostID:    postID,
+			ParentID:  parentID,
+			CreatedAt: cur.CreatedAt,
+			CommentID: cur.ID,
+			Limit:     peek,
 		})
 		if err != nil {
 			return pagination.Page[model.Comment]{}, err

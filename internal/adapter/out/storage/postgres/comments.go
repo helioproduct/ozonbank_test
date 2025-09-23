@@ -169,11 +169,7 @@ func (s *CommentStorage) GetCommentsByPost(ctx context.Context, postID int64, li
 	return out, nil
 }
 
-func (s *CommentStorage) GetCommentsByPostAfter(ctx context.Context, req service.GetCommentsAfterRequest) ([]model.Comment, error) {
-	if req.Limit <= 0 {
-		req.Limit = DefaultCommentsLimit
-	}
-
+func (s *CommentStorage) GetCommentsByPostAfter(ctx context.Context, req service.GetCommentsRequest) ([]model.Comment, error) {
 	if err := validator.New().Struct(req); err != nil {
 		return nil, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
 	}
@@ -192,7 +188,7 @@ func (s *CommentStorage) GetCommentsByPostAfter(ctx context.Context, req service
 			sq.Eq{tableinfo.CommentPostIDColumn: req.PostID},
 			sq.Expr(
 				fmt.Sprintf("(%s, %s) < (?, ?)", tableinfo.CommentCreatedAtColumn, tableinfo.CommentIDColumn),
-				req.AfterCreatedAt, req.AfterID,
+				req.CreatedAt, req.CommentID,
 			),
 		}).
 		OrderBy(
@@ -292,7 +288,7 @@ func (s *CommentStorage) GetReplies(ctx context.Context, postID, parentID int64,
 	return out, nil
 }
 
-func (s *CommentStorage) GetRepliesAfter(ctx context.Context, req service.GetRepliesAfterRequest) ([]model.Comment, error) {
+func (s *CommentStorage) GetRepliesAfter(ctx context.Context, req service.GetRepliesRequest) ([]model.Comment, error) {
 	if req.Limit <= 0 {
 		req.Limit = DefaultCommentsLimit
 	}
@@ -315,7 +311,7 @@ func (s *CommentStorage) GetRepliesAfter(ctx context.Context, req service.GetRep
 			sq.Eq{tableinfo.CommentParentIDColumn: req.ParentID},
 			sq.Expr(
 				fmt.Sprintf("(%s, %s) < (?, ?)", tableinfo.CommentCreatedAtColumn, tableinfo.CommentIDColumn),
-				req.AfterCreatedAt, req.AfterID,
+				req.CreatedAt, req.CommentID,
 			),
 		}).
 		OrderBy(

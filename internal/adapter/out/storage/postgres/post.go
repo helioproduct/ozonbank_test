@@ -7,6 +7,7 @@ import (
 	"myreddit/internal/model"
 	"myreddit/internal/service"
 	"myreddit/pkg/tableinfo"
+	"slices"
 
 	sq "github.com/Masterminds/squirrel"
 	trmpgx "github.com/avito-tech/go-transaction-manager/drivers/pgxv5/v2"
@@ -171,40 +172,15 @@ func (s *PostStorage) GetPosts(ctx context.Context, limit int) ([]model.Post, er
 	return out, nil
 }
 
-func (s *PostStorage) GetPostsAfter(ctx context.Context, req service.GetPostsAfterRequest) ([]model.Post, error) {
-	if req.Limit <= 0 {
-		req.Limit = service.DefaultPostsLimit
-	}
-
-	if err := validator.New().Struct(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
-	}
-
-	query, args, err := sq.
-		Select(
-			tableinfo.PostIDColumn,
-			tableinfo.PostTitleColumn,
-			tableinfo.PostBodyColumn,
-			tableinfo.PostUserIDColumn,
-			tableinfo.PostCommentsEnabledColumn,
-			tableinfo.PostCreatedAtColumn,
-		).
-		From(tableinfo.PostsTableName).
-		Where(
-			sq.Expr(
-				fmt.Sprintf("(%s, %s) < (?, ?)", tableinfo.PostCreatedAtColumn, tableinfo.PostIDColumn),
-				req.AfterCreatedAt, req.AfterID,
-			),
-		).
-		OrderBy(
-			tableinfo.PostCreatedAtColumn+" DESC",
-			tableinfo.PostIDColumn+" DESC",
-		).
-		Limit(uint64(req.Limit)).
-		PlaceholderFormat(sq.Dollar).
-		ToSql()
+func (s *PostStorage) GetPostsWithCursor(ctx context.Context, req service.GetPostsRequest) ([]model.Post, error) {
+	qb, err := getQueryBuilder(req)
 	if err != nil {
-		return nil, fmt.Errorf("build select: %w", err)
+		return nil, err
+	}
+
+	query, args, err := qb.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBuildingQuery, err)
 	}
 
 	tr := s.getter.DefaultTrOrDB(ctx, s.pool)
@@ -231,6 +207,11 @@ func (s *PostStorage) GetPostsAfter(ctx context.Context, req service.GetPostsAft
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows: %w", err)
+	}
+
+	// need to reverse slice if requesting posts before cursor
+	if req.Before != nil {
+		slices.Reverse(out)
 	}
 
 	return out, nil
@@ -281,4 +262,59 @@ func (s *PostStorage) SetCommentsEnabled(ctx context.Context, postID int64, enab
 		return fmt.Errorf("exec update comments_enabled: %w", err)
 	}
 	return nil
+}
+
+func getQueryBuilder(req service.GetPostsRequest) (sq.SelectBuilder, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = service.DefaultPostsLimit
+	}
+
+	base := sq.
+		Select(
+			tableinfo.PostIDColumn,
+			tableinfo.PostTitleColumn,
+			tableinfo.PostBodyColumn,
+			tableinfo.PostUserIDColumn,
+			tableinfo.PostCommentsEnabledColumn,
+			tableinfo.PostCreatedAtColumn,
+		).
+		From(tableinfo.PostsTableName).
+		PlaceholderFormat(sq.Dollar)
+
+	createdAt := tableinfo.PostCreatedAtColumn
+	idCol := tableinfo.PostIDColumn
+
+	switch {
+	case req.After != nil && req.Before == nil:
+		// (after.CreatedAt, after.ID) > (created_at, id)
+		sb := base.
+			Where(sq.Or{
+				sq.Lt{createdAt: req.After.CreatedAt},
+				sq.And{
+					sq.Eq{createdAt: req.After.CreatedAt},
+					sq.Lt{idCol: req.After.ID},
+				},
+			}).
+			OrderBy(createdAt+" DESC", idCol+" DESC").
+			Limit(uint64(limit))
+		return sb, nil
+
+	case req.Before != nil && req.After == nil:
+		// (before.CreatedAt, before.ID) < (created_at, id)
+		sb := base.
+			Where(sq.Or{
+				sq.Gt{createdAt: req.Before.CreatedAt},
+				sq.And{
+					sq.Eq{createdAt: req.Before.CreatedAt},
+					sq.Gt{idCol: req.Before.ID},
+				},
+			}).
+			OrderBy(createdAt+" ASC", idCol+" ASC").
+			Limit(uint64(limit))
+		return sb, nil
+
+	default:
+		return sq.SelectBuilder{}, fmt.Errorf("exactly one cursosr must be set: %w", service.ErrInvalidRequest)
+	}
 }
