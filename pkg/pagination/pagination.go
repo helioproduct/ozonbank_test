@@ -1,13 +1,16 @@
 package pagination
 
 type PageRequest struct {
-	AfterCursor *string
-	Limit       int
+	BeforeCursor *string
+	AfterCursor  *string
+	Limit        int
 }
 
 type Page[T any] struct {
-	Count       int
-	Items       []T
-	EndCursor   *string
-	HasNextPage bool
+	Count           int
+	Items           []T
+	StartCursor     *string
+	EndCursor       *string
+	HasNextPage     bool
+	HasPreviousPage bool
 }
