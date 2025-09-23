@@ -173,7 +173,7 @@ func (s *PostStorage) GetPosts(ctx context.Context, limit int) ([]model.Post, er
 }
 
 func (s *PostStorage) GetPostsWithCursor(ctx context.Context, req service.GetPostsRequest) ([]model.Post, error) {
-	qb, err := getQueryBuilder(req)
+	qb, err := getPostsQueryBuilder(req)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func (s *PostStorage) SetCommentsEnabled(ctx context.Context, postID int64, enab
 	return nil
 }
 
-func getQueryBuilder(req service.GetPostsRequest) (sq.SelectBuilder, error) {
+func getPostsQueryBuilder(req service.GetPostsRequest) (sq.SelectBuilder, error) {
 	limit := req.Limit
 	if limit <= 0 {
 		limit = service.DefaultPostsLimit
@@ -287,7 +287,7 @@ func getQueryBuilder(req service.GetPostsRequest) (sq.SelectBuilder, error) {
 
 	switch {
 	case req.After != nil && req.Before == nil:
-		// (after.CreatedAt, after.ID) > (created_at, id)
+		// (created_at, id) <(after.CreatedAt, after.ID)
 		sb := base.
 			Where(sq.Or{
 				sq.Lt{createdAt: req.After.CreatedAt},
@@ -301,7 +301,7 @@ func getQueryBuilder(req service.GetPostsRequest) (sq.SelectBuilder, error) {
 		return sb, nil
 
 	case req.Before != nil && req.After == nil:
-		// (before.CreatedAt, before.ID) < (created_at, id)
+		// (created_at, id)>(before.CreatedAt, before.ID)
 		sb := base.
 			Where(sq.Or{
 				sq.Gt{createdAt: req.Before.CreatedAt},
@@ -315,6 +315,6 @@ func getQueryBuilder(req service.GetPostsRequest) (sq.SelectBuilder, error) {
 		return sb, nil
 
 	default:
-		return sq.SelectBuilder{}, fmt.Errorf("exactly one cursosr must be set: %w", service.ErrInvalidRequest)
+		return sq.SelectBuilder{}, fmt.Errorf("invalid keyset: exactly one of after/before must be set: %w", service.ErrInvalidRequest)
 	}
 }

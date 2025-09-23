@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"myreddit/internal/model"
 	"myreddit/internal/service"
+	"slices"
 
 	"myreddit/pkg/tableinfo"
 
@@ -169,43 +170,21 @@ func (s *CommentStorage) GetCommentsByPost(ctx context.Context, postID int64, li
 	return out, nil
 }
 
-func (s *CommentStorage) GetCommentsByPostAfter(ctx context.Context, req service.GetCommentsRequest) ([]model.Comment, error) {
-	if err := validator.New().Struct(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
+func (s *CommentStorage) GetCommentsByPostWithCursor(ctx context.Context, req service.GetCommentsRequest) ([]model.Comment, error) {
+	qb, err := getCommentsQueryBuilder(req)
+	if err != nil {
+		return nil, err
 	}
 
-	query, args, err := sq.
-		Select(
-			tableinfo.CommentIDColumn,
-			tableinfo.CommentPostIDColumn,
-			tableinfo.CommentParentIDColumn,
-			tableinfo.CommentUserIDColumn,
-			tableinfo.CommentBodyColumn,
-			tableinfo.CommentCreatedAtColumn,
-		).
-		From(tableinfo.CommentsTableName).
-		Where(sq.And{
-			sq.Eq{tableinfo.CommentPostIDColumn: req.PostID},
-			sq.Expr(
-				fmt.Sprintf("(%s, %s) < (?, ?)", tableinfo.CommentCreatedAtColumn, tableinfo.CommentIDColumn),
-				req.CreatedAt, req.CommentID,
-			),
-		}).
-		OrderBy(
-			fmt.Sprintf("%s DESC", tableinfo.CommentCreatedAtColumn),
-			fmt.Sprintf("%s DESC", tableinfo.CommentIDColumn),
-		).
-		Limit(uint64(req.Limit)).
-		PlaceholderFormat(sq.Dollar).
-		ToSql()
+	query, args, err := qb.ToSql()
 	if err != nil {
-		return nil, fmt.Errorf("build select comments after: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrBuildingQuery, err)
 	}
 
 	tr := s.getter.DefaultTrOrDB(ctx, s.pool)
 	rows, err := tr.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("exec select comments after: %w", err)
+		return nil, fmt.Errorf("exec select comments: %w", err)
 	}
 	defer rows.Close()
 
@@ -228,6 +207,9 @@ func (s *CommentStorage) GetCommentsByPostAfter(ctx context.Context, req service
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
+	if req.Before != nil {
+		slices.Reverse(out)
+	}
 	return out, nil
 }
 
@@ -281,6 +263,7 @@ func (s *CommentStorage) GetReplies(ctx context.Context, postID, parentID int64,
 		); err != nil {
 			return nil, fmt.Errorf("scan replies: %w", err)
 		}
+		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows replies: %w", err)
@@ -288,39 +271,13 @@ func (s *CommentStorage) GetReplies(ctx context.Context, postID, parentID int64,
 	return out, nil
 }
 
-func (s *CommentStorage) GetRepliesAfter(ctx context.Context, req service.GetRepliesRequest) ([]model.Comment, error) {
-	if req.Limit <= 0 {
-		req.Limit = DefaultCommentsLimit
-	}
-	if err := validator.New().Struct(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
+func (s *CommentStorage) GetRepliesWithCursor(ctx context.Context, req service.GetRepliesRequest) ([]model.Comment, error) {
+	qb, err := getRepliesQueryBuilder(req)
+	if err != nil {
+		return nil, err
 	}
 
-	query, args, err := sq.
-		Select(
-			tableinfo.CommentIDColumn,
-			tableinfo.CommentPostIDColumn,
-			tableinfo.CommentParentIDColumn,
-			tableinfo.CommentUserIDColumn,
-			tableinfo.CommentBodyColumn,
-			tableinfo.CommentCreatedAtColumn,
-		).
-		From(tableinfo.CommentsTableName).
-		Where(sq.And{
-			sq.Eq{tableinfo.CommentPostIDColumn: req.PostID},
-			sq.Eq{tableinfo.CommentParentIDColumn: req.ParentID},
-			sq.Expr(
-				fmt.Sprintf("(%s, %s) < (?, ?)", tableinfo.CommentCreatedAtColumn, tableinfo.CommentIDColumn),
-				req.CreatedAt, req.CommentID,
-			),
-		}).
-		OrderBy(
-			fmt.Sprintf("%s DESC", tableinfo.CommentCreatedAtColumn),
-			fmt.Sprintf("%s DESC", tableinfo.CommentIDColumn),
-		).
-		Limit(uint64(req.Limit)).
-		PlaceholderFormat(sq.Dollar).
-		ToSql()
+	query, args, err := qb.ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBuildingQuery, err)
 	}
@@ -328,7 +285,7 @@ func (s *CommentStorage) GetRepliesAfter(ctx context.Context, req service.GetRep
 	tr := s.getter.DefaultTrOrDB(ctx, s.pool)
 	rows, err := tr.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("exec select replies after: %w", err)
+		return nil, fmt.Errorf("exec select replies after/before: %w", err)
 	}
 	defer rows.Close()
 
@@ -343,13 +300,129 @@ func (s *CommentStorage) GetRepliesAfter(ctx context.Context, req service.GetRep
 			&c.Body,
 			&c.CreatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scan replies after: %w", err)
+			return nil, fmt.Errorf("scan replies after/before: %w", err)
 		}
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows replies after: %w", err)
+		return nil, fmt.Errorf("rows replies after/before: %w", err)
 	}
 
+	if req.Before != nil {
+		slices.Reverse(out)
+	}
 	return out, nil
+}
+
+func getCommentsQueryBuilder(req service.GetCommentsRequest) (sq.SelectBuilder, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = DefaultCommentsLimit
+	}
+
+	base := sq.
+		Select(
+			tableinfo.CommentIDColumn,
+			tableinfo.CommentPostIDColumn,
+			tableinfo.CommentParentIDColumn,
+			tableinfo.CommentUserIDColumn,
+			tableinfo.CommentBodyColumn,
+			tableinfo.CommentCreatedAtColumn,
+		).
+		From(tableinfo.CommentsTableName).
+		Where(sq.Eq{tableinfo.CommentPostIDColumn: req.PostID}).
+		PlaceholderFormat(sq.Dollar)
+
+	createdAt := tableinfo.CommentCreatedAtColumn
+	idCol := tableinfo.CommentIDColumn
+
+	switch {
+	case req.After != nil && req.Before == nil:
+		// () < (created_at, id)
+		// older
+		sb := base.
+			Where(sq.Or{
+				sq.Lt{createdAt: req.After.CreatedAt},
+				sq.And{
+					sq.Eq{createdAt: req.After.CreatedAt},
+					sq.Lt{idCol: req.After.ID},
+				},
+			}).
+			OrderBy(createdAt+" DESC", idCol+" DESC").
+			Limit(uint64(limit))
+		return sb, nil
+
+	case req.Before != nil && req.After == nil:
+		sb := base.
+			Where(sq.Or{
+				sq.Gt{createdAt: req.Before.CreatedAt},
+				sq.And{
+					sq.Eq{createdAt: req.Before.CreatedAt},
+					sq.Gt{idCol: req.Before.ID},
+				},
+			}).
+			OrderBy(createdAt+" ASC", idCol+" ASC").
+			Limit(uint64(limit))
+		return sb, nil
+
+	default:
+		return sq.SelectBuilder{}, fmt.Errorf("invalid keyset: exactly one of after/before must be set: %w", service.ErrInvalidRequest)
+	}
+}
+
+func getRepliesQueryBuilder(req service.GetRepliesRequest) (sq.SelectBuilder, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = DefaultCommentsLimit
+	}
+
+	base := sq.
+		Select(
+			tableinfo.CommentIDColumn,
+			tableinfo.CommentPostIDColumn,
+			tableinfo.CommentParentIDColumn,
+			tableinfo.CommentUserIDColumn,
+			tableinfo.CommentBodyColumn,
+			tableinfo.CommentCreatedAtColumn,
+		).
+		From(tableinfo.CommentsTableName).
+		Where(sq.And{
+			sq.Eq{tableinfo.CommentPostIDColumn: req.PostID},
+			sq.Eq{tableinfo.CommentParentIDColumn: req.ParentID},
+		}).
+		PlaceholderFormat(sq.Dollar)
+
+	createdAt := tableinfo.CommentCreatedAtColumn
+	idCol := tableinfo.CommentIDColumn
+
+	switch {
+	case req.After != nil && req.Before == nil:
+		sb := base.
+			Where(sq.Or{
+				sq.Lt{createdAt: req.After.CreatedAt},
+				sq.And{
+					sq.Eq{createdAt: req.After.CreatedAt},
+					sq.Lt{idCol: req.After.ID},
+				},
+			}).
+			OrderBy(createdAt+" DESC", idCol+" DESC").
+			Limit(uint64(limit))
+		return sb, nil
+
+	case req.Before != nil && req.After == nil:
+		sb := base.
+			Where(sq.Or{
+				sq.Gt{createdAt: req.Before.CreatedAt},
+				sq.And{
+					sq.Eq{createdAt: req.Before.CreatedAt},
+					sq.Gt{idCol: req.Before.ID},
+				},
+			}).
+			OrderBy(createdAt+" ASC", idCol+" ASC").
+			Limit(uint64(limit))
+		return sb, nil
+
+	default:
+		return sq.SelectBuilder{}, fmt.Errorf("invalid keyset: exactly one of after/before must be set: %w", service.ErrInvalidRequest)
+	}
 }

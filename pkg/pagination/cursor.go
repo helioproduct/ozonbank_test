@@ -11,9 +11,10 @@ type Cursor struct {
 	ID        int64
 }
 
-func (c *Cursor) Encode() string {
+func (c *Cursor) Encode() *string {
 	b, _ := json.Marshal(c)
-	return base64.StdEncoding.EncodeToString(b)
+	encodedString := base64.StdEncoding.EncodeToString(b)
+	return &encodedString
 }
 
 func Decode(s *string) (*Cursor, error) {

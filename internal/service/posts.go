@@ -18,8 +18,7 @@ type PostStorage interface {
 	CreatePost(ctx context.Context, req CreatePostRequest) (model.Post, error)
 	GetPostByID(ctx context.Context, postID int64) (model.Post, error)
 	GetPosts(ctx context.Context, limit int) ([]model.Post, error)
-	GetPostsAfter(ctx context.Context, req GetPostsAfterRequest) ([]model.Post, error)
-
+	GetPostsWithCursor(ctx context.Context, req GetPostsRequest) ([]model.Post, error)
 	GetPostAuthorID(ctx context.Context, postID int64) (int64, error)
 	SetCommentsEnabled(ctx context.Context, postID int64, enabled bool) error
 }
@@ -52,45 +51,53 @@ func (s *PostService) GetPostByID(ctx context.Context, postID int64) (model.Post
 	return p, nil
 }
 
-func (s *PostService) GetPosts(ctx context.Context, req pagination.PageRequest) (pagination.Page[model.Post], error) {
+func (s *PostService) GetPosts(ctx context.Context, in pagination.PageRequest) (pagination.Page[model.Post], error) {
 	var (
 		posts []model.Post
 		err   error
+		page  pagination.Page[model.Post]
 	)
 
-	limit := req.Limit
+	if err := validatePagination(in); err != nil {
+		return page, err
+	}
+
+	limit := in.Limit
 	if limit <= 0 {
 		limit = DefaultPostsLimit
 	}
+	if limit > MaxPostsLimit {
+		limit = MaxPostsLimit
+	}
 	peek := limit + 1
 
-	// если курсора еще  нет
-	if req.AfterCursor == nil || *req.AfterCursor == "" {
+	afterProvided := in.AfterCursor != nil && *in.AfterCursor != ""
+	beforeProvided := in.BeforeCursor != nil && *in.BeforeCursor != ""
+
+	switch {
+	case !afterProvided && !beforeProvided:
 		posts, err = s.postStorage.GetPosts(ctx, peek)
 		if err != nil {
-			return pagination.Page[model.Post]{}, err
+			return page, err
 		}
-	} else {
-		cur, err := pagination.Decode(*req.AfterCursor)
+
+	default:
+		req, err := toGetPostsRequest(in)
 		if err != nil {
-			return pagination.Page[model.Post]{}, err
+			return page, err
 		}
-		posts, err = s.postStorage.GetPostsAfter(ctx, GetPostsAfterRequest{
-			CreatedAt: cur.CreatedAt,
-			PostID:    cur.ID,
-			Limit:     peek,
-		})
+		req.Limit = peek
+		posts, err = s.postStorage.GetPostsWithCursor(ctx, req)
 		if err != nil {
-			return pagination.Page[model.Post]{}, err
+			return page, err
 		}
 	}
-
-	page := pagination.Page[model.Post]{}
 
 	if len(posts) == 0 {
 		page.Items = nil
 		page.Count = 0
 		page.HasNextPage = false
+		page.StartCursor = nil
 		page.EndCursor = nil
 		return page, nil
 	}
@@ -103,13 +110,16 @@ func (s *PostService) GetPosts(ctx context.Context, req pagination.PageRequest) 
 	page.Items = posts
 	page.Count = len(posts)
 
-	last := posts[len(posts)-1]
-	end := pagination.Encode(pagination.Cursor{
-		CreatedAt: last.CreatedAt,
-		ID:        last.ID,
-	})
-	page.EndCursor = &end
+	startCursor := pagination.Cursor{
+		CreatedAt: posts[0].CreatedAt,
+		ID:        posts[0].ID,
+	}
+	endCursor := pagination.Cursor{
+		CreatedAt: posts[len(posts)-1].CreatedAt,
+		ID:        posts[len(posts)-1].ID,
+	}
 
+	page.StartCursor, page.EndCursor = startCursor.Encode(), endCursor.Encode()
 	return page, nil
 }
 
