@@ -7,46 +7,203 @@ package graphql
 import (
 	"context"
 	"fmt"
-	"myreddit/internal/adapter/in/graphql/model"
+	gqlmodel "myreddit/internal/adapter/in/graphql/model"
+	"myreddit/internal/service"
+	"strconv"
 )
 
 // CreatePost is the resolver for the createPost field.
-func (r *mutationResolver) CreatePost(ctx context.Context, title string, body string, userID string) (*model.Post, error) {
-	panic(fmt.Errorf("not implemented: CreatePost - createPost"))
+func (r *mutationResolver) CreatePost(ctx context.Context, title string, body string, userID string) (*gqlmodel.Post, error) {
+	uid, err := strconv.ParseInt(userID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := r.postsService.CreatePost(ctx, service.CreatePostRequest{
+		UserID:          uid,
+		Title:           title,
+		Text:            body,
+		CommentsEnabled: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toPostNode(out), nil
 }
 
 // SetCommentsEnabled is the resolver for the setCommentsEnabled field.
-func (r *mutationResolver) SetCommentsEnabled(ctx context.Context, postID string, userID string, enabled bool) (*model.Post, error) {
-	panic(fmt.Errorf("not implemented: SetCommentsEnabled - setCommentsEnabled"))
+func (r *mutationResolver) SetCommentsEnabled(ctx context.Context, postID string, userID string, enabled bool) (*gqlmodel.Post, error) {
+	pid, err := strconv.ParseInt(postID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	uid, err := strconv.ParseInt(userID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := r.postsService.ChangePostCommentPermission(ctx, pid, uid, enabled); err != nil {
+		return nil, err
+	}
+	p, err := r.postsService.GetPostByID(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+	return toPostNode(p), nil
 }
 
 // CreateComment is the resolver for the createComment field.
-func (r *mutationResolver) CreateComment(ctx context.Context, postID string, parentID *string, userID string, body string) (*model.Comment, error) {
-	panic(fmt.Errorf("not implemented: CreateComment - createComment"))
+func (r *mutationResolver) CreateComment(ctx context.Context, postID string, parentID *string, userID string, body string) (*gqlmodel.Comment, error) {
+	pid, err := strconv.ParseInt(postID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	uid, err := strconv.ParseInt(userID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	var parent *int64
+	if parentID != nil && *parentID != "" {
+		v, err := strconv.ParseInt(*parentID, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		parent = &v
+	}
+
+	out, err := r.commentService.CreateComment(ctx, service.CreateCommentRequest{
+		PostID:   pid,
+		ParentID: parent,
+		UserID:   uid,
+		Body:     body,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toCommentNode(out), nil
 }
 
 // Post is the resolver for the post field.
-func (r *queryResolver) Post(ctx context.Context, id string) (*model.Post, error) {
-	panic(fmt.Errorf("not implemented: Post - post"))
+func (r *queryResolver) Post(ctx context.Context, id string) (*gqlmodel.Post, error) {
+	pid, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.postsService.GetPostByID(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+	return toPostNode(p), nil
 }
 
 // Posts is the resolver for the posts field.
-func (r *queryResolver) Posts(ctx context.Context, page *model.PageInput) (*model.PostConnection, error) {
-	panic(fmt.Errorf("not implemented: Posts - posts"))
+func (r *queryResolver) Posts(ctx context.Context, page *gqlmodel.PageInput) (*gqlmodel.PostConnection, error) {
+	req := toPageRequest(page)
+	pg, err := r.postsService.GetPosts(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	edges := make([]*gqlmodel.PostEdge, 0, len(pg.Items))
+	nodes := make([]*gqlmodel.Post, 0, len(pg.Items))
+	for _, it := range pg.Items {
+		n := toPostNode(it)
+		edges = append(edges, &gqlmodel.PostEdge{
+			Cursor: *encodeCursor(it.ID, it.CreatedAt),
+			Node:   n,
+		})
+		nodes = append(nodes, n)
+	}
+
+	return &gqlmodel.PostConnection{
+		Edges: edges,
+		Nodes: nodes,
+		PageInfo: &gqlmodel.PageInfo{
+			StartCursor: pg.StartCursor,
+			EndCursor:   pg.EndCursor,
+			HasNextPage: pg.HasNextPage,
+			Count:       pg.Count,
+		},
+	}, nil
 }
 
 // Comments is the resolver for the comments field.
-func (r *queryResolver) Comments(ctx context.Context, postID string, page *model.PageInput) (*model.CommentConnection, error) {
-	panic(fmt.Errorf("not implemented: Comments - comments"))
+func (r *queryResolver) Comments(ctx context.Context, postID string, page *gqlmodel.PageInput) (*gqlmodel.CommentConnection, error) {
+	pid, err := strconv.ParseInt(postID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	req := toPageRequest(page)
+	pg, err := r.commentService.GetCommentsByPost(ctx, req, pid)
+	if err != nil {
+		return nil, err
+	}
+
+	edges := make([]*gqlmodel.CommentEdge, 0, len(pg.Items))
+	nodes := make([]*gqlmodel.Comment, 0, len(pg.Items))
+	for _, it := range pg.Items {
+		n := toCommentNode(it)
+		edges = append(edges, &gqlmodel.CommentEdge{
+			Cursor: *encodeCursor(it.ID, it.CreatedAt),
+			Node:   n,
+		})
+		nodes = append(nodes, n)
+	}
+
+	return &gqlmodel.CommentConnection{
+		Edges: edges,
+		Nodes: nodes,
+		PageInfo: &gqlmodel.PageInfo{
+			StartCursor: pg.StartCursor,
+			EndCursor:   pg.EndCursor,
+			HasNextPage: pg.HasNextPage,
+			Count:       pg.Count,
+		},
+	}, nil
 }
 
 // Replies is the resolver for the replies field.
-func (r *queryResolver) Replies(ctx context.Context, postID string, parentID string, page *model.PageInput) (*model.CommentConnection, error) {
-	panic(fmt.Errorf("not implemented: Replies - replies"))
+func (r *queryResolver) Replies(ctx context.Context, postID string, parentID string, page *gqlmodel.PageInput) (*gqlmodel.CommentConnection, error) {
+	pid, err := strconv.ParseInt(postID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	par, err := strconv.ParseInt(parentID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	req := toPageRequest(page)
+	pg, err := r.commentService.GetReplies(ctx, req, pid, par)
+	if err != nil {
+		return nil, err
+	}
+
+	edges := make([]*gqlmodel.CommentEdge, 0, len(pg.Items))
+	nodes := make([]*gqlmodel.Comment, 0, len(pg.Items))
+	for _, it := range pg.Items {
+		n := toCommentNode(it)
+		edges = append(edges, &gqlmodel.CommentEdge{
+			Cursor: *encodeCursor(it.ID, it.CreatedAt),
+			Node:   n,
+		})
+		nodes = append(nodes, n)
+	}
+
+	return &gqlmodel.CommentConnection{
+		Edges: edges,
+		Nodes: nodes,
+		PageInfo: &gqlmodel.PageInfo{
+			StartCursor: pg.StartCursor,
+			EndCursor:   pg.EndCursor,
+			HasNextPage: pg.HasNextPage,
+			Count:       pg.Count,
+		},
+	}, nil
 }
 
 // CommentAdded is the resolver for the commentAdded field.
-func (r *subscriptionResolver) CommentAdded(ctx context.Context, postID string) (<-chan *model.Comment, error) {
+func (r *subscriptionResolver) CommentAdded(ctx context.Context, postID string) (<-chan *gqlmodel.Comment, error) {
 	panic(fmt.Errorf("not implemented: CommentAdded - commentAdded"))
 }
 

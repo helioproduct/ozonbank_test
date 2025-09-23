@@ -7,7 +7,7 @@ exec:
 
 model:
   filename: internal/adapter/in/graphql/model/models_gen.go
-  package: model
+  package: gqlmodel
 
 resolver:
   layout: follow-schema
