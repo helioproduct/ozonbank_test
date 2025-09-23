@@ -26,3 +26,10 @@ type Resolver struct {
 	postsService   PostService
 	commentService CommentService
 }
+
+func NewResolver(posts *service.PostService, comments *service.CommentService) *Resolver {
+	return &Resolver{
+		postsService:   posts,
+		commentService: comments,
+	}
+}

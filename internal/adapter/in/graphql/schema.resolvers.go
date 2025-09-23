@@ -213,8 +213,7 @@ func (r *subscriptionResolver) CommentAdded(ctx context.Context, postID string) 
 		return nil, err
 	}
 
-	out := make(chan *gqlmodel.Comment)
-
+	out := make(chan *gqlmodel.Comment, 1)
 	go func() {
 		defer close(out)
 
