@@ -15,10 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const (
-	DefaultPostsLimit = 50
-)
-
 var (
 	ErrBuildingQuery = errors.New("error building sql-query")
 )
@@ -122,7 +118,7 @@ func (s *PostStorage) GetPostByID(ctx context.Context, postID int64) (model.Post
 
 func (s *PostStorage) GetPosts(ctx context.Context, limit int) ([]model.Post, error) {
 	if limit <= 0 {
-		limit = DefaultPostsLimit
+		limit = service.DefaultPostsLimit
 	}
 	query, args, err := sq.
 		Select(
@@ -177,7 +173,7 @@ func (s *PostStorage) GetPosts(ctx context.Context, limit int) ([]model.Post, er
 
 func (s *PostStorage) GetPostsAfter(ctx context.Context, req service.GetPostsAfterRequest) ([]model.Post, error) {
 	if req.Limit <= 0 {
-		req.Limit = DefaultPostsLimit
+		req.Limit = service.DefaultPostsLimit
 	}
 
 	if err := validator.New().Struct(req); err != nil {
