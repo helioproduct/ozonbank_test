@@ -6,7 +6,6 @@ package graphql
 
 import (
 	"context"
-	"fmt"
 	gqlmodel "myreddit/internal/adapter/in/graphql/model"
 	"myreddit/internal/service"
 	"strconv"
@@ -204,7 +203,46 @@ func (r *queryResolver) Replies(ctx context.Context, postID string, parentID str
 
 // CommentAdded is the resolver for the commentAdded field.
 func (r *subscriptionResolver) CommentAdded(ctx context.Context, postID string) (<-chan *gqlmodel.Comment, error) {
-	panic(fmt.Errorf("not implemented: CommentAdded - commentAdded"))
+	pid, err := strconv.ParseInt(postID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	comments, err := r.commentService.Listen(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(chan *gqlmodel.Comment)
+
+	go func() {
+		defer close(out)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case comment, ok := <-comments:
+				if !ok {
+					return
+				}
+
+				out <- &gqlmodel.Comment{
+					ID:        strconv.FormatInt(comment.ID, 10),
+					PostID:    strconv.FormatInt(comment.PostID, 10),
+					ParentID:  toPtrString(comment.ParentID),
+					UserID:    strconv.FormatInt(comment.UserID, 10),
+					Body:      comment.Body,
+					CreatedAt: comment.CreatedAt,
+				}
+
+			}
+		}
+	}()
+
+	return out, nil
+
+	// panic(fmt.Errorf("not implemented: CommentAdded - commentAdded"))
 }
 
 // Mutation returns MutationResolver implementation.
@@ -219,3 +257,11 @@ func (r *Resolver) Subscription() SubscriptionResolver { return &subscriptionRes
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
 type subscriptionResolver struct{ *Resolver }
+
+func toPtrString(id *int64) *string {
+	if id == nil {
+		return nil
+	}
+	s := strconv.FormatInt(*id, 10)
+	return &s
+}
