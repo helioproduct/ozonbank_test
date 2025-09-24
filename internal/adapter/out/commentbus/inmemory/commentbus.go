@@ -11,23 +11,16 @@ type CommentBus struct {
 	mu sync.RWMutex
 	// postID -> set каналов
 	subs map[int64]map[chan model.Comment]struct{}
-	buf  int
 }
 
-func New(buf int) *CommentBus {
-	if buf <= 0 {
-		buf = 64
-	}
+func New() *CommentBus {
 	return &CommentBus{
 		subs: make(map[int64]map[chan model.Comment]struct{}),
-		buf:  buf,
 	}
 }
 
-// var _ service.CommentBus = (*CommentBus)(nil)
-
 func (b *CommentBus) Subscribe(ctx context.Context, postID int64) (<-chan model.Comment, error) {
-	ch := make(chan model.Comment, b.buf)
+	ch := make(chan model.Comment, 1)
 
 	b.mu.Lock()
 	if b.subs[postID] == nil {
