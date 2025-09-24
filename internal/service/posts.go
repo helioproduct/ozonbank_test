@@ -39,6 +39,7 @@ func (s *PostService) CreatePost(ctx context.Context, req CreatePostRequest) (mo
 	if err := validator.New().Struct(req); err != nil {
 		return model.Post{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
+
 	return s.postStorage.CreatePost(ctx, model.Post{
 		UserID:          req.UserID,
 		Title:           req.Title,

@@ -13,6 +13,7 @@ import (
 const (
 	DefaultCommentsLimit = 50
 	MaxCommentsLimit     = 250
+	MaxCommentTextLen    = 2000
 )
 
 //go:generate mockgen -source=comments.go -destination=./comment_storage_mock.go -package=service myreddit/internal/service CommentStorage
@@ -48,6 +49,10 @@ func (s *CommentService) CreateComment(ctx context.Context, req CreateCommentReq
 	if err := validator.New().Struct(req); err != nil {
 		return model.Comment{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
+	if len([]rune(req.Text)) > MaxCommentTextLen {
+		return model.Comment{}, fmt.Errorf("text too long: %w", ErrInvalidRequest)
+	}
+
 	// check for post and for parent id
 	if _, err := s.postStorage.GetPostByID(ctx, req.PostID); err != nil {
 		return model.Comment{}, err

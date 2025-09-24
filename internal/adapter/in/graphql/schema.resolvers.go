@@ -75,7 +75,7 @@ func (r *mutationResolver) CreateComment(ctx context.Context, postID string, par
 		PostID:   pid,
 		ParentID: parent,
 		UserID:   uid,
-		Body:     body,
+		Text:     body,
 	})
 	if err != nil {
 		return nil, err

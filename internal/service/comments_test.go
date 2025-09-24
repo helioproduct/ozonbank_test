@@ -33,21 +33,21 @@ func TestCommentService_CreateComment(t *testing.T) {
 		},
 		{
 			name: "storage error",
-			req:  CreateCommentRequest{PostID: 10, UserID: 1, Body: "hi"},
+			req:  CreateCommentRequest{PostID: 10, UserID: 1, Text: "hi"},
 			setup: func(ms *MockCommentStorage, _ *MockCommentBus, mp *MockPostStorage) {
 				mp.EXPECT().
 					GetPostByID(gomock.Any(), int64(10)).
 					Return(model.Post{ID: 10, CommentsEnabled: true}, nil)
 
 				ms.EXPECT().
-					CreateComment(gomock.Any(), CreateCommentRequest{PostID: 10, UserID: 1, Body: "hi"}).
+					CreateComment(gomock.Any(), CreateCommentRequest{PostID: 10, UserID: 1, Text: "hi"}).
 					Return(model.Comment{}, errors.New("db fail"))
 			},
 			wantErr: errors.New("db fail"),
 		},
 		{
 			name: "success + publish",
-			req:  CreateCommentRequest{PostID: 10, UserID: 2, Body: "ok"},
+			req:  CreateCommentRequest{PostID: 10, UserID: 2, Text: "ok"},
 			setup: func(ms *MockCommentStorage, mb *MockCommentBus, mp *MockPostStorage) {
 				c := model.Comment{ID: 5, PostID: 10, UserID: 2, Body: "ok", CreatedAt: now}
 
@@ -56,7 +56,7 @@ func TestCommentService_CreateComment(t *testing.T) {
 					Return(model.Post{ID: 10, CommentsEnabled: true}, nil)
 
 				ms.EXPECT().
-					CreateComment(gomock.Any(), CreateCommentRequest{PostID: 10, UserID: 2, Body: "ok"}).
+					CreateComment(gomock.Any(), CreateCommentRequest{PostID: 10, UserID: 2, Text: "ok"}).
 					Return(c, nil)
 
 				mb.EXPECT().
@@ -91,7 +91,7 @@ func TestCommentService_CreateComment(t *testing.T) {
 			require.NoError(t, err)
 			require.NotZero(t, got.ID)
 			require.Equal(t, tt.req.PostID, got.PostID)
-			require.Equal(t, tt.req.Body, got.Body)
+			require.Equal(t, tt.req.Text, got.Body)
 		})
 	}
 }

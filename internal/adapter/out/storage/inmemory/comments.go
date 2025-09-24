@@ -35,7 +35,7 @@ func (s *CommentStorage) CreateComment(_ context.Context, req service.CreateComm
 		ID:        int64(len(s.comments)),
 		PostID:    req.PostID,
 		UserID:    req.UserID,
-		Body:      req.Body,
+		Body:      req.Text,
 		CreatedAt: time.Now(),
 	}
 	if req.ParentID != nil {

@@ -157,7 +157,7 @@ func TestCommentStorage_CreateComment_Success(t *testing.T) {
 
 	st := NewCommentStorage(m, trmpgx.DefaultCtxGetter)
 	out, err := st.CreateComment(context.Background(), service.CreateCommentRequest{
-		PostID: 1, ParentID: nil, UserID: 42, Body: "hello",
+		PostID: 1, ParentID: nil, UserID: 42, Text: "hello",
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(1001), out.ID)
@@ -182,7 +182,7 @@ func TestCommentStorage_CreateComment_DBError(t *testing.T) {
 
 	st := NewCommentStorage(m, trmpgx.DefaultCtxGetter)
 	_, err := st.CreateComment(context.Background(), service.CreateCommentRequest{
-		PostID: 1, UserID: 7, Body: "boom",
+		PostID: 1, UserID: 7, Text: "boom",
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "exec insert comment")

@@ -17,7 +17,7 @@ type CreateCommentRequest struct {
 	PostID   int64 `validate:"required,gt=0"`
 	ParentID *int64
 	UserID   int64  `validate:"required,gt=0"`
-	Body     string `validate:"required"`
+	Text     string `validate:"required"`
 }
 
 func validatePagination(in pagination.PageRequest) error {

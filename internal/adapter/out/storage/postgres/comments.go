@@ -40,7 +40,7 @@ func (s *CommentStorage) CreateComment(ctx context.Context, req service.CreateCo
 			tableinfo.CommentUserIDColumn,
 			tableinfo.CommentBodyColumn,
 		).
-		Values(req.PostID, req.ParentID, req.UserID, req.Body).
+		Values(req.PostID, req.ParentID, req.UserID, req.Text).
 		Suffix(fmt.Sprintf(
 			"RETURNING %s, %s, %s, %s, %s, %s",
 			tableinfo.CommentIDColumn,

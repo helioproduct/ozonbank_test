@@ -18,7 +18,7 @@ func TestCommentStorage_CreateAndGetByID(t *testing.T) {
 	st := NewCommentStorage()
 
 	root, err := st.CreateComment(context.Background(), service.CreateCommentRequest{
-		PostID: 10, UserID: 1, Body: "root",
+		PostID: 10, UserID: 1, Text: "root",
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), root.ID)
@@ -28,7 +28,7 @@ func TestCommentStorage_CreateAndGetByID(t *testing.T) {
 
 	parent := root.ID
 	reply, err := st.CreateComment(context.Background(), service.CreateCommentRequest{
-		PostID: 10, UserID: 2, Body: "reply", ParentID: &parent,
+		PostID: 10, UserID: 2, Text: "reply", ParentID: &parent,
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), reply.ID)
@@ -59,12 +59,12 @@ func TestCommentStorage_GetCommentsByPost_OrderDESC_and_Limit(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		_, err := st.CreateComment(context.Background(), service.CreateCommentRequest{
-			PostID: 10, UserID: 1, Body: "c",
+			PostID: 10, UserID: 1, Text: "c",
 		})
 		require.NoError(t, err)
 	}
 	_, _ = st.CreateComment(context.Background(), service.CreateCommentRequest{
-		PostID: 20, UserID: 1, Body: "x",
+		PostID: 20, UserID: 1, Text: "x",
 	})
 
 	got, err := st.GetCommentsByPost(context.Background(), 10, 3)
@@ -83,7 +83,7 @@ func TestCommentStorage_GetCommentsByPostWithCursor_After_Before(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		_, err := st.CreateComment(context.Background(), service.CreateCommentRequest{
-			PostID: 10, UserID: 1, Body: "c",
+			PostID: 10, UserID: 1, Text: "c",
 		})
 		require.NoError(t, err)
 	}
@@ -113,14 +113,14 @@ func TestCommentStorage_GetRepliesWithCursor_After_Before(t *testing.T) {
 	st := NewCommentStorage()
 
 	parent, err := st.CreateComment(context.Background(), service.CreateCommentRequest{
-		PostID: 10, UserID: 1, Body: "p",
+		PostID: 10, UserID: 1, Text: "p",
 	})
 	require.NoError(t, err)
 	pid := parent.ID
 
 	for i := 0; i < 5; i++ {
 		_, err := st.CreateComment(context.Background(), service.CreateCommentRequest{
-			PostID: 10, UserID: 2, Body: "r", ParentID: &pid,
+			PostID: 10, UserID: 2, Text: "r", ParentID: &pid,
 		})
 		require.NoError(t, err)
 	}
