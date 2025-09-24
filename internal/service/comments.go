@@ -15,11 +15,6 @@ const (
 	MaxCommentsLimit     = 250
 )
 
-type CommentService struct {
-	commentStorage CommentStorage
-	commentBus     CommentBus
-}
-
 //go:generate mockgen -source=comments.go -destination=./comment_storage_mock.go -package=service myreddit/internal/service CommentStorage
 type CommentStorage interface {
 	CreateComment(ctx context.Context, req CreateCommentRequest) (model.Comment, error)
@@ -35,16 +30,32 @@ type CommentBus interface {
 	Publish(ctx context.Context, postID int64, c model.Comment) error
 }
 
-func NewCommentService(commentsStorage CommentStorage, commentBus CommentBus) *CommentService {
+type CommentService struct {
+	commentStorage CommentStorage
+	commentBus     CommentBus
+	postStorage    PostStorage
+}
+
+func NewCommentService(commentsStorage CommentStorage, commentBus CommentBus, postStorage PostStorage) *CommentService {
 	return &CommentService{
 		commentStorage: commentsStorage,
 		commentBus:     commentBus,
+		postStorage:    postStorage,
 	}
 }
 
 func (s *CommentService) CreateComment(ctx context.Context, req CreateCommentRequest) (model.Comment, error) {
 	if err := validator.New().Struct(req); err != nil {
 		return model.Comment{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+	}
+	// check for post and for parent id
+	if _, err := s.postStorage.GetPostByID(ctx, req.PostID); err != nil {
+		return model.Comment{}, err
+	}
+	if req.ParentID != nil {
+		if _, err := s.commentStorage.GetCommentByID(ctx, *req.ParentID); err != nil {
+			return model.Comment{}, err
+		}
 	}
 
 	comment, err := s.commentStorage.CreateComment(ctx, req)

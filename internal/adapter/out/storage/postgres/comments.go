@@ -13,7 +13,6 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	trmpgx "github.com/avito-tech/go-transaction-manager/drivers/pgxv5/v2"
-	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -32,10 +31,6 @@ func NewCommentStorage(pool DB, getter *trmpgx.CtxGetter) *CommentStorage {
 
 func (s *CommentStorage) CreateComment(ctx context.Context, req service.CreateCommentRequest) (model.Comment, error) {
 	var out model.Comment
-
-	if err := validator.New().Struct(req); err != nil {
-		return out, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
-	}
 
 	query, args, err := sq.
 		Insert(tableinfo.CommentsTableName).
