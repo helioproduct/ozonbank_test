@@ -13,5 +13,8 @@ down:
 clear:
 	$(DC) down -v
 
+rebuild:
+	$(DC) up -d --build --force-recreate
+
 test:
 	go test ./... -cover

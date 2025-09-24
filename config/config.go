@@ -43,23 +43,30 @@ type WSConfig struct {
 }
 
 func LoadConfig() Config {
-	return Config{
-		Postgres: PostgresConfig{
+	storageType := mustGetEnv("STORAGE_TYPE")
+
+	cfg := Config{
+		StorageType: storageType,
+		HTTP: HTTPConfig{
+			Port: mustGetEnv("HTTP_PORT"),
+		},
+		WS: WSConfig{
+			KeepAliveSeconds: mustGetInt("WS_KEEPALIVE_SECONDS"),
+		},
+	}
+
+	if storageType == "postgres" {
+		cfg.Postgres = PostgresConfig{
 			User:     mustGetEnv("POSTGRES_USER"),
 			Password: mustGetEnv("POSTGRES_PASSWORD"),
 			DB:       mustGetEnv("POSTGRES_DB"),
 			Host:     mustGetEnv("POSTGRES_HOST"),
 			Port:     mustGetInt("POSTGRES_PORT"),
 			SSLMode:  mustGetEnv("POSTGRES_SSLMODE"),
-		},
-		HTTP: HTTPConfig{
-			Port: mustGetEnv("HTTP_PORT"),
-		},
-		WS: WSConfig{
-			KeepAliveSeconds: mustGetInt("WS_KEEPALIVE"),
-		},
-		StorageType: mustGetEnv("STORAGE_TYPE"),
+		}
 	}
+
+	return cfg
 }
 
 func mustGetEnv(key string) string {
