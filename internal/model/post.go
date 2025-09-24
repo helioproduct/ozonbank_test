@@ -5,7 +5,7 @@ import "time"
 type Post struct {
 	ID              int64
 	Title           string
-	Body            string
+	Text            string
 	UserID          int64
 	CommentsEnabled bool
 	CreatedAt       time.Time

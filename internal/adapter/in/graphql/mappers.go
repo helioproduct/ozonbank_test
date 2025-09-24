@@ -13,7 +13,7 @@ func toPostNode(p model.Post) *gqlmodel.Post {
 	return &gqlmodel.Post{
 		ID:              strconv.FormatInt(p.ID, 10),
 		Title:           p.Title,
-		Body:            p.Body,
+		Body:            p.Text,
 		UserID:          strconv.FormatInt(p.UserID, 10),
 		CommentsEnabled: p.CommentsEnabled,
 		CreatedAt:       p.CreatedAt,

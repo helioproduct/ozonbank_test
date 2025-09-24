@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"myreddit/internal/adapter/out/storage"
 	"myreddit/internal/model"
 	"myreddit/internal/service"
 	"slices"
@@ -170,8 +171,8 @@ func (s *CommentStorage) GetCommentsByPost(ctx context.Context, postID int64, li
 	return out, nil
 }
 
-func (s *CommentStorage) GetCommentsByPostWithCursor(ctx context.Context, req service.GetCommentsRequest) ([]model.Comment, error) {
-	qb, err := getCommentsQueryBuilder(req)
+func (s *CommentStorage) GetCommentsByPostWithCursor(ctx context.Context, params storage.GetCommentsParams) ([]model.Comment, error) {
+	qb, err := getCommentsQueryBuilder(params)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +189,7 @@ func (s *CommentStorage) GetCommentsByPostWithCursor(ctx context.Context, req se
 	}
 	defer rows.Close()
 
-	out := make([]model.Comment, 0, req.Limit)
+	out := make([]model.Comment, 0, params.Limit)
 	for rows.Next() {
 		var c model.Comment
 		if err := rows.Scan(
@@ -207,7 +208,7 @@ func (s *CommentStorage) GetCommentsByPostWithCursor(ctx context.Context, req se
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
-	if req.Before != nil {
+	if params.Direction == storage.DirectionBefore {
 		slices.Reverse(out)
 	}
 	return out, nil
@@ -271,8 +272,8 @@ func (s *CommentStorage) GetReplies(ctx context.Context, postID, parentID int64,
 	return out, nil
 }
 
-func (s *CommentStorage) GetRepliesWithCursor(ctx context.Context, req service.GetRepliesRequest) ([]model.Comment, error) {
-	qb, err := getRepliesQueryBuilder(req)
+func (s *CommentStorage) GetRepliesWithCursor(ctx context.Context, params storage.GetRepliesParams) ([]model.Comment, error) {
+	qb, err := getRepliesQueryBuilder(params)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +290,7 @@ func (s *CommentStorage) GetRepliesWithCursor(ctx context.Context, req service.G
 	}
 	defer rows.Close()
 
-	out := make([]model.Comment, 0, req.Limit)
+	out := make([]model.Comment, 0, params.Limit)
 	for rows.Next() {
 		var c model.Comment
 		if err := rows.Scan(
@@ -308,14 +309,15 @@ func (s *CommentStorage) GetRepliesWithCursor(ctx context.Context, req service.G
 		return nil, fmt.Errorf("rows replies after/before: %w", err)
 	}
 
-	if req.Before != nil {
+	if params.Direction == storage.DirectionBefore {
 		slices.Reverse(out)
 	}
+
 	return out, nil
 }
 
-func getCommentsQueryBuilder(req service.GetCommentsRequest) (sq.SelectBuilder, error) {
-	limit := req.Limit
+func getCommentsQueryBuilder(params storage.GetCommentsParams) (sq.SelectBuilder, error) {
+	limit := params.Limit
 	if limit <= 0 {
 		limit = DefaultCommentsLimit
 	}
@@ -330,48 +332,44 @@ func getCommentsQueryBuilder(req service.GetCommentsRequest) (sq.SelectBuilder, 
 			tableinfo.CommentCreatedAtColumn,
 		).
 		From(tableinfo.CommentsTableName).
-		Where(sq.Eq{tableinfo.CommentPostIDColumn: req.PostID}).
+		Where(sq.Eq{tableinfo.CommentPostIDColumn: params.PostID}).
 		PlaceholderFormat(sq.Dollar)
 
 	createdAt := tableinfo.CommentCreatedAtColumn
 	idCol := tableinfo.CommentIDColumn
 
-	switch {
-	case req.After != nil && req.Before == nil:
-		// () < (created_at, id)
-		// older
+	if params.Direction == storage.DirectionAfter {
 		sb := base.
 			Where(sq.Or{
-				sq.Lt{createdAt: req.After.CreatedAt},
+				sq.Lt{createdAt: params.Cursor.CreatedAt},
 				sq.And{
-					sq.Eq{createdAt: req.After.CreatedAt},
-					sq.Lt{idCol: req.After.ID},
+					sq.Eq{createdAt: params.Cursor.CreatedAt},
+					sq.Lt{idCol: params.Cursor.ID},
 				},
 			}).
 			OrderBy(createdAt+" DESC", idCol+" DESC").
 			Limit(uint64(limit))
 		return sb, nil
+	}
 
-	case req.Before != nil && req.After == nil:
+	if params.Direction == storage.DirectionBefore {
 		sb := base.
 			Where(sq.Or{
-				sq.Gt{createdAt: req.Before.CreatedAt},
+				sq.Gt{createdAt: params.Cursor.CreatedAt},
 				sq.And{
-					sq.Eq{createdAt: req.Before.CreatedAt},
-					sq.Gt{idCol: req.Before.ID},
+					sq.Eq{createdAt: params.Cursor.CreatedAt},
+					sq.Gt{idCol: params.Cursor.ID},
 				},
 			}).
 			OrderBy(createdAt+" ASC", idCol+" ASC").
 			Limit(uint64(limit))
 		return sb, nil
-
-	default:
-		return sq.SelectBuilder{}, fmt.Errorf("invalid keyset: exactly one of after/before must be set: %w", service.ErrInvalidRequest)
 	}
-}
 
-func getRepliesQueryBuilder(req service.GetRepliesRequest) (sq.SelectBuilder, error) {
-	limit := req.Limit
+	return sq.SelectBuilder{}, fmt.Errorf("invalid keyset: direction must be set: %w", service.ErrInvalidRequest)
+}
+func getRepliesQueryBuilder(params storage.GetRepliesParams) (sq.SelectBuilder, error) {
+	limit := params.Limit
 	if limit <= 0 {
 		limit = DefaultCommentsLimit
 	}
@@ -387,42 +385,43 @@ func getRepliesQueryBuilder(req service.GetRepliesRequest) (sq.SelectBuilder, er
 		).
 		From(tableinfo.CommentsTableName).
 		Where(sq.And{
-			sq.Eq{tableinfo.CommentPostIDColumn: req.PostID},
-			sq.Eq{tableinfo.CommentParentIDColumn: req.ParentID},
+			sq.Eq{tableinfo.CommentPostIDColumn: params.PostID},
+			sq.Eq{tableinfo.CommentParentIDColumn: params.ParentID},
 		}).
 		PlaceholderFormat(sq.Dollar)
 
 	createdAt := tableinfo.CommentCreatedAtColumn
 	idCol := tableinfo.CommentIDColumn
 
-	switch {
-	case req.After != nil && req.Before == nil:
+	if params.Direction == storage.DirectionAfter {
+		// (created_at, id) < (cursor.CreatedAt, cursor.ID)
 		sb := base.
 			Where(sq.Or{
-				sq.Lt{createdAt: req.After.CreatedAt},
+				sq.Lt{createdAt: params.Cursor.CreatedAt},
 				sq.And{
-					sq.Eq{createdAt: req.After.CreatedAt},
-					sq.Lt{idCol: req.After.ID},
+					sq.Eq{createdAt: params.Cursor.CreatedAt},
+					sq.Lt{idCol: params.Cursor.ID},
 				},
 			}).
 			OrderBy(createdAt+" DESC", idCol+" DESC").
 			Limit(uint64(limit))
 		return sb, nil
+	}
 
-	case req.Before != nil && req.After == nil:
+	if params.Direction == storage.DirectionBefore {
+		// (created_at, id) > (cursor.CreatedAt, cursor.ID) — идём к более новым
 		sb := base.
 			Where(sq.Or{
-				sq.Gt{createdAt: req.Before.CreatedAt},
+				sq.Gt{createdAt: params.Cursor.CreatedAt},
 				sq.And{
-					sq.Eq{createdAt: req.Before.CreatedAt},
-					sq.Gt{idCol: req.Before.ID},
+					sq.Eq{createdAt: params.Cursor.CreatedAt},
+					sq.Gt{idCol: params.Cursor.ID},
 				},
 			}).
 			OrderBy(createdAt+" ASC", idCol+" ASC").
 			Limit(uint64(limit))
 		return sb, nil
-
-	default:
-		return sq.SelectBuilder{}, fmt.Errorf("invalid keyset: exactly one of after/before must be set: %w", service.ErrInvalidRequest)
 	}
+
+	return sq.SelectBuilder{}, fmt.Errorf("invalid keyset: direction must be set: %w", service.ErrInvalidRequest)
 }

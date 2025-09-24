@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"myreddit/internal/adapter/out/storage"
 	"myreddit/internal/model"
 	"myreddit/pkg/pagination"
 
@@ -15,10 +16,10 @@ const (
 )
 
 type PostStorage interface {
-	CreatePost(ctx context.Context, req CreatePostRequest) (model.Post, error)
+	CreatePost(ctx context.Context, post model.Post) (model.Post, error)
 	GetPostByID(ctx context.Context, postID int64) (model.Post, error)
 	GetPosts(ctx context.Context, limit int) ([]model.Post, error)
-	GetPostsWithCursor(ctx context.Context, req GetPostsRequest) ([]model.Post, error)
+	GetPostsWithCursor(ctx context.Context, params storage.GetPostsParams) ([]model.Post, error)
 	GetPostAuthorID(ctx context.Context, postID int64) (int64, error)
 	SetCommentsEnabled(ctx context.Context, postID int64, enabled bool) error
 }
@@ -37,7 +38,12 @@ func (s *PostService) CreatePost(ctx context.Context, req CreatePostRequest) (mo
 	if err := validator.New().Struct(req); err != nil {
 		return model.Post{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
-	return s.postStorage.CreatePost(ctx, req)
+	return s.postStorage.CreatePost(ctx, model.Post{
+		UserID:          req.UserID,
+		Title:           req.Title,
+		Text:            req.Text,
+		CommentsEnabled: req.CommentsEnabled,
+	})
 }
 
 func (s *PostService) GetPostByID(ctx context.Context, postID int64) (model.Post, error) {
@@ -82,12 +88,12 @@ func (s *PostService) GetPosts(ctx context.Context, in pagination.PageRequest) (
 		}
 
 	default:
-		req, err := toGetPostsRequest(in)
+		params, err := toGetPostsParams(in)
 		if err != nil {
 			return page, err
 		}
-		req.Limit = peek
-		posts, err = s.postStorage.GetPostsWithCursor(ctx, req)
+		params.Limit = peek
+		posts, err = s.postStorage.GetPostsWithCursor(ctx, params)
 		if err != nil {
 			return page, err
 		}

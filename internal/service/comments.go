@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"myreddit/internal/adapter/out/storage"
 	"myreddit/internal/model"
 	"myreddit/pkg/pagination"
 
@@ -24,8 +25,8 @@ type CommentStorage interface {
 	GetCommentByID(ctx context.Context, commentID int64) (model.Comment, error)
 	GetCommentsByPost(ctx context.Context, postID int64, limit int) ([]model.Comment, error)
 	GetReplies(ctx context.Context, postID, parentID int64, limit int) ([]model.Comment, error)
-	GetCommentsByPostWithCursor(ctx context.Context, req GetCommentsRequest) ([]model.Comment, error)
-	GetRepliesWithCursor(ctx context.Context, req GetRepliesRequest) ([]model.Comment, error)
+	GetCommentsByPostWithCursor(ctx context.Context, params storage.GetCommentsParams) ([]model.Comment, error)
+	GetRepliesWithCursor(ctx context.Context, params storage.GetRepliesParams) ([]model.Comment, error)
 }
 
 type CommentBus interface {
@@ -165,7 +166,7 @@ func (s *CommentService) GetReplies(ctx context.Context, in pagination.PageReque
 		}
 
 	default:
-		req, err := toGetRepliesRequest(postID, parentID, in)
+		req, err := toGetRepliesParams(postID, parentID, in)
 		if err != nil {
 			return page, err
 		}

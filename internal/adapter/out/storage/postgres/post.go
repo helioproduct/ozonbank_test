@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"myreddit/internal/adapter/out/storage"
 	"myreddit/internal/model"
 	"myreddit/internal/service"
 	"myreddit/pkg/tableinfo"
@@ -11,7 +12,6 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	trmpgx "github.com/avito-tech/go-transaction-manager/drivers/pgxv5/v2"
-	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -32,12 +32,8 @@ func NewPostStorage(pool *pgxpool.Pool, getter *trmpgx.CtxGetter) *PostStorage {
 	}
 }
 
-func (s *PostStorage) CreatePost(ctx context.Context, req service.CreatePostRequest) (model.Post, error) {
+func (s *PostStorage) CreatePost(ctx context.Context, post model.Post) (model.Post, error) {
 	var out model.Post
-
-	if err := validator.New().Struct(req); err != nil {
-		return model.Post{}, fmt.Errorf("%w: %v", service.ErrInvalidRequest, err)
-	}
 
 	query, args, err := sq.
 		Insert(tableinfo.PostsTableName).
@@ -47,7 +43,7 @@ func (s *PostStorage) CreatePost(ctx context.Context, req service.CreatePostRequ
 			tableinfo.PostUserIDColumn,
 			tableinfo.PostCommentsEnabledColumn,
 		).
-		Values(req.Title, req.Text, req.UserID, req.CommentsEnabled).
+		Values(post.Title, post.Text, post.UserID, post.CommentsEnabled).
 		Suffix(fmt.Sprintf("RETURNING %s, %s, %s, %s, %s, %s",
 			tableinfo.PostIDColumn,
 			tableinfo.PostTitleColumn,
@@ -67,7 +63,7 @@ func (s *PostStorage) CreatePost(ctx context.Context, req service.CreatePostRequ
 	if err := tr.QueryRow(ctx, query, args...).Scan(
 		&out.ID,
 		&out.Title,
-		&out.Body,
+		&out.Text,
 		&out.UserID,
 		&out.CommentsEnabled,
 		&out.CreatedAt,
@@ -103,7 +99,7 @@ func (s *PostStorage) GetPostByID(ctx context.Context, postID int64) (model.Post
 	if err := tr.QueryRow(ctx, query, args...).Scan(
 		&out.ID,
 		&out.Title,
-		&out.Body,
+		&out.Text,
 		&out.UserID,
 		&out.CommentsEnabled,
 		&out.CreatedAt,
@@ -156,7 +152,7 @@ func (s *PostStorage) GetPosts(ctx context.Context, limit int) ([]model.Post, er
 		if err := rows.Scan(
 			&p.ID,
 			&p.Title,
-			&p.Body,
+			&p.Text,
 			&p.UserID,
 			&p.CommentsEnabled,
 			&p.CreatedAt,
@@ -172,8 +168,8 @@ func (s *PostStorage) GetPosts(ctx context.Context, limit int) ([]model.Post, er
 	return out, nil
 }
 
-func (s *PostStorage) GetPostsWithCursor(ctx context.Context, req service.GetPostsRequest) ([]model.Post, error) {
-	qb, err := getPostsQueryBuilder(req)
+func (s *PostStorage) GetPostsWithCursor(ctx context.Context, params storage.GetPostsParams) ([]model.Post, error) {
+	qb, err := getPostsQueryBuilder(params)
 	if err != nil {
 		return nil, err
 	}
@@ -190,13 +186,18 @@ func (s *PostStorage) GetPostsWithCursor(ctx context.Context, req service.GetPos
 	}
 	defer rows.Close()
 
-	out := make([]model.Post, 0, req.Limit)
+	limit := params.Limit
+	if limit <= 0 {
+		limit = service.DefaultPostsLimit
+	}
+
+	out := make([]model.Post, 0, limit)
 	for rows.Next() {
 		var p model.Post
 		if err := rows.Scan(
 			&p.ID,
 			&p.Title,
-			&p.Body,
+			&p.Text,
 			&p.UserID,
 			&p.CommentsEnabled,
 			&p.CreatedAt,
@@ -209,11 +210,9 @@ func (s *PostStorage) GetPostsWithCursor(ctx context.Context, req service.GetPos
 		return nil, fmt.Errorf("rows: %w", err)
 	}
 
-	// need to reverse slice if requesting posts before cursor
-	if req.Before != nil {
+	if params.Direction == storage.DirectionBefore {
 		slices.Reverse(out)
 	}
-
 	return out, nil
 }
 
@@ -264,8 +263,8 @@ func (s *PostStorage) SetCommentsEnabled(ctx context.Context, postID int64, enab
 	return nil
 }
 
-func getPostsQueryBuilder(req service.GetPostsRequest) (sq.SelectBuilder, error) {
-	limit := req.Limit
+func getPostsQueryBuilder(params storage.GetPostsParams) (sq.SelectBuilder, error) {
+	limit := params.Limit
 	if limit <= 0 {
 		limit = service.DefaultPostsLimit
 	}
@@ -285,36 +284,35 @@ func getPostsQueryBuilder(req service.GetPostsRequest) (sq.SelectBuilder, error)
 	createdAt := tableinfo.PostCreatedAtColumn
 	idCol := tableinfo.PostIDColumn
 
-	switch {
-	case req.After != nil && req.Before == nil:
-		// (created_at, id) <(after.CreatedAt, after.ID)
+	if params.Direction == storage.DirectionAfter {
+		// (created_at, id) < (cursor.CreatedAt, cursor.ID)
 		sb := base.
 			Where(sq.Or{
-				sq.Lt{createdAt: req.After.CreatedAt},
+				sq.Lt{createdAt: params.Cursor.CreatedAt},
 				sq.And{
-					sq.Eq{createdAt: req.After.CreatedAt},
-					sq.Lt{idCol: req.After.ID},
+					sq.Eq{createdAt: params.Cursor.CreatedAt},
+					sq.Lt{idCol: params.Cursor.ID},
 				},
 			}).
 			OrderBy(createdAt+" DESC", idCol+" DESC").
 			Limit(uint64(limit))
 		return sb, nil
+	}
 
-	case req.Before != nil && req.After == nil:
-		// (created_at, id)>(before.CreatedAt, before.ID)
+	if params.Direction == storage.DirectionBefore {
+		// (created_at, id)> (cursor.CreatedAt, cursor.ID)
 		sb := base.
 			Where(sq.Or{
-				sq.Gt{createdAt: req.Before.CreatedAt},
+				sq.Gt{createdAt: params.Cursor.CreatedAt},
 				sq.And{
-					sq.Eq{createdAt: req.Before.CreatedAt},
-					sq.Gt{idCol: req.Before.ID},
+					sq.Eq{createdAt: params.Cursor.CreatedAt},
+					sq.Gt{idCol: params.Cursor.ID},
 				},
 			}).
 			OrderBy(createdAt+" ASC", idCol+" ASC").
 			Limit(uint64(limit))
 		return sb, nil
-
-	default:
-		return sq.SelectBuilder{}, fmt.Errorf("invalid keyset: exactly one of after/before must be set: %w", service.ErrInvalidRequest)
 	}
+
+	return sq.SelectBuilder{}, fmt.Errorf("invalid keyset: direction must be set")
 }
