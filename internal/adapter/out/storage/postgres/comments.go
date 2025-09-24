@@ -409,7 +409,7 @@ func getRepliesQueryBuilder(params storage.GetRepliesParams) (sq.SelectBuilder, 
 	}
 
 	if params.Direction == storage.DirectionBefore {
-		// (created_at, id) > (cursor.CreatedAt, cursor.ID) — идём к более новым
+		// (created_at, id) > (cursor.CreatedAt, cursor.ID)
 		sb := base.
 			Where(sq.Or{
 				sq.Gt{createdAt: params.Cursor.CreatedAt},

@@ -59,7 +59,7 @@ func (b *CommentBus) Publish(_ context.Context, postID int64, c model.Comment) e
 	b.mu.RLock()
 	set := b.subs[postID]
 
-	// для всех подписчиков подписанных на пост рассылаем комментарий
+	// для всех подписчиков  на пост рассылаем комментарий
 	for ch := range set {
 		select {
 		case ch <- c:
