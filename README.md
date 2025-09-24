@@ -84,9 +84,103 @@ mutation {
 }
 ```
 
-### Пагинация
 
-пагинация по постам 
+### Пагинация
+пагинация по постам, комментариям, ответам на комментарии происходит с помощью курсоров (encoded строки от элемента списка)  
+(на основе данной статьи https://www.apollographql.com/blog/explaining-graphql-connections)  
+
+
+#### пример запроса
+```graphql
+query {
+  posts(page: { limit: 10 }) {
+    nodes {
+      id
+      title
+      body
+      userId
+      createdAt
+      commentsEnabled
+    }
+    pageInfo {
+      count
+      hasNextPage
+      startCursor
+      endCursor
+    }
+  }
+}
+```
+
+
+#### ответ
+```graphql
+{
+  "data": {
+    "posts": {
+      "nodes": [
+        {
+          "id": "5",
+          "title": "Пост 3",
+          "body": "Текст поста 3",
+          "userId": "42",
+          "createdAt": "2025-09-24T14:45:11.090943Z",
+          "commentsEnabled": true
+        },
+        {
+          "id": "4",
+          "title": "Пост 2",
+          "body": "Текст поста 2",
+          "userId": "42",
+          "createdAt": "2025-09-24T14:45:03.223335Z",
+          "commentsEnabled": true
+        },
+      ],
+      "pageInfo": {
+        "count": 2,
+        "hasNextPage": false,
+        "startCursor": "eyJDcmVhdGVkQXQiOiIyMDI1LTA5LTI0VDE0OjQ1OjExLjA5MDk0M1oiLCJJRCI6NX0=",
+        "endCursor": "eyJDcmVhdGVkQXQiOiIyMDI1LTA5LTI0VDE0OjQyOjI1LjQ1NzM5M1oiLCJJRCI6MX0="
+      }
+    }
+  }
+}
+```
+
+
+
+
+### Таблицы и индексы в БД
+```sql
+CREATE TABLE posts (
+    id                  BIGSERIAL PRIMARY KEY,
+    title               TEXT        NOT NULL,
+    body                TEXT        NOT NULL,
+    user_id             BIGINT      NOT NULL CHECK(user_id >= 0),
+    comments_enabled    BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE comments (
+    id         BIGSERIAL PRIMARY KEY,
+    post_id    BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    parent_id  BIGINT REFERENCES comments(id) ON DELETE CASCADE,
+    user_id    BIGINT NOT NULL,                
+    body       TEXT   NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
+CREATE INDEX idx_comments_pagination
+    ON comments (post_id, parent_id, created_at, id);
+
+CREATE INDEX idx_comments_roots
+    ON comments (post_id, created_at, id)
+    WHERE parent_id IS NULL;
+
+
+CREATE INDEX idx_posts_pagination ON posts (created_at DESC, id DESC);
+```
 
 
 
