@@ -86,9 +86,23 @@ mutation {
 
 
 ### Пагинация
-пагинация по постам, комментариям, ответам на комментарии происходит с помощью курсоров (encoded строки от элемента списка)  
+key-set пагинация по постам, комментариям, ответам на комментарии
 (на основе данной статьи https://www.apollographql.com/blog/explaining-graphql-connections)  
 
+```graphql
+input PageInput {
+  limit: Int
+  before: Cursor
+  after: Cursor
+}
+
+type PageInfo {
+  startCursor: Cursor
+  endCursor: Cursor
+  hasNextPage: Boolean!
+  count: Int!
+}
+```
 
 #### пример запроса
 ```graphql
