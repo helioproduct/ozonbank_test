@@ -120,6 +120,7 @@ func TestCommentService_GetCommentByID(t *testing.T) {
 				ms.EXPECT().
 					GetCommentByID(gomock.Any(), int64(7)).
 					Return(model.Comment{}, errors.New("not found"))
+
 			},
 			wantErr: errors.New("not found"),
 		},
@@ -136,7 +137,6 @@ func TestCommentService_GetCommentByID(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
@@ -172,14 +172,14 @@ func TestCommentService_GetCommentsByPost_NoCursors(t *testing.T) {
 		name          string
 		req           pagination.PageRequest
 		postID        int64
-		mockItems     []model.Comment // peek = limit+1
+		mockItems     []model.Comment
 		expectHasNext bool
 		expectCount   int
 	}{
 		{
 			name:   "has next page",
 			postID: 10,
-			req:    pagination.PageRequest{Limit: 2}, // peek=3
+			req:    pagination.PageRequest{Limit: 2},
 			mockItems: []model.Comment{
 				{ID: 30, PostID: 10, Body: "a", CreatedAt: now},
 				{ID: 20, PostID: 10, Body: "b", CreatedAt: now.Add(-time.Minute)},
@@ -210,7 +210,6 @@ func TestCommentService_GetCommentsByPost_NoCursors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
@@ -229,6 +228,10 @@ func TestCommentService_GetCommentsByPost_NoCursors(t *testing.T) {
 			ms.EXPECT().
 				GetCommentsByPost(gomock.Any(), tt.postID, peek).
 				Return(tt.mockItems, nil)
+
+			mp.EXPECT().
+				GetPostByID(gomock.Any(), tt.postID).
+				Return(model.Post{ID: tt.postID, CommentsEnabled: true}, nil)
 
 			svc := NewCommentService(ms, nil, mp)
 			page, err := svc.GetCommentsByPost(context.Background(), tt.req, tt.postID)
@@ -261,7 +264,7 @@ func TestCommentService_GetCommentsByPost_WithCursor(t *testing.T) {
 		name        string
 		postID      int64
 		req         pagination.PageRequest
-		setup       func(ms *MockCommentStorage, cap *capParams, ret []model.Comment)
+		setup       func(ms *MockCommentStorage, mp *MockPostStorage, cap *capParams, ret []model.Comment)
 		expectDir   storage.Direction
 		expectCount int
 	}{
@@ -273,13 +276,17 @@ func TestCommentService_GetCommentsByPost_WithCursor(t *testing.T) {
 				enc := cur.Encode()
 				return pagination.PageRequest{Limit: 2, AfterCursor: enc}
 			}(),
-			setup: func(ms *MockCommentStorage, cap *capParams, ret []model.Comment) {
+			setup: func(ms *MockCommentStorage, mp *MockPostStorage, cap *capParams, ret []model.Comment) {
 				ms.EXPECT().
 					GetCommentsByPostWithCursor(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(_ context.Context, p storage.GetCommentsParams) ([]model.Comment, error) {
 						cap.got = p
 						return ret, nil
 					})
+
+				mp.EXPECT().
+					GetPostByID(gomock.Any(), int64(10)).
+					Return(model.Post{ID: 10, CommentsEnabled: true}, nil)
 			},
 			expectDir:   storage.DirectionAfter,
 			expectCount: 2,
@@ -292,13 +299,17 @@ func TestCommentService_GetCommentsByPost_WithCursor(t *testing.T) {
 				enc := cur.Encode()
 				return pagination.PageRequest{Limit: 3, BeforeCursor: enc}
 			}(),
-			setup: func(ms *MockCommentStorage, cap *capParams, ret []model.Comment) {
+			setup: func(ms *MockCommentStorage, mp *MockPostStorage, cap *capParams, ret []model.Comment) {
 				ms.EXPECT().
 					GetCommentsByPostWithCursor(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(_ context.Context, p storage.GetCommentsParams) ([]model.Comment, error) {
 						cap.got = p
 						return ret, nil
 					})
+
+				mp.EXPECT().
+					GetPostByID(gomock.Any(), int64(10)).
+					Return(model.Post{ID: 10, CommentsEnabled: true}, nil)
 			},
 			expectDir:   storage.DirectionBefore,
 			expectCount: 3,
@@ -306,7 +317,6 @@ func TestCommentService_GetCommentsByPost_WithCursor(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
@@ -327,18 +337,16 @@ func TestCommentService_GetCommentsByPost_WithCursor(t *testing.T) {
 				})
 			}
 
-			tt.setup(ms, cap, ret)
+			tt.setup(ms, mp, cap, ret)
 
 			svc := NewCommentService(ms, nil, mp)
 			page, err := svc.GetCommentsByPost(context.Background(), tt.req, tt.postID)
 			require.NoError(t, err)
 
-			// проверка параметров запроса
 			require.Equal(t, peek, cap.got.Limit)
 			require.Equal(t, tt.postID, cap.got.PostID)
 			require.Equal(t, tt.expectDir, cap.got.Direction)
 
-			// обрезка и курсоры
 			require.True(t, page.HasNextPage)
 			require.Equal(t, tt.expectCount, page.Count)
 			require.NotNil(t, page.StartCursor)
@@ -365,7 +373,7 @@ func TestCommentService_GetReplies_NoCursors(t *testing.T) {
 			name:     "has next page",
 			postID:   10,
 			parentID: 1,
-			req:      pagination.PageRequest{Limit: 2}, // peek=3
+			req:      pagination.PageRequest{Limit: 2},
 			mockItems: []model.Comment{
 				{ID: 9, PostID: 10, ParentID: ptrI64(1), CreatedAt: now},
 				{ID: 8, PostID: 10, ParentID: ptrI64(1), CreatedAt: now.Add(-time.Minute)},
@@ -386,13 +394,16 @@ func TestCommentService_GetReplies_NoCursors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
 			ms := NewMockCommentStorage(ctrl)
 			mp := NewMockPostStorage(ctrl)
+
+			mp.EXPECT().
+				GetPostByID(gomock.Any(), int64(tt.postID)).
+				Return(model.Post{ID: tt.postID, CommentsEnabled: true}, nil)
 
 			peek := tt.req.Limit + 1
 			if tt.req.Limit <= 0 {
@@ -474,7 +485,6 @@ func TestCommentService_GetReplies_WithCursor(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
@@ -495,6 +505,10 @@ func TestCommentService_GetReplies_WithCursor(t *testing.T) {
 					CreatedAt: now.Add(-time.Duration(i) * time.Minute),
 				})
 			}
+
+			mp.EXPECT().
+				GetPostByID(gomock.Any(), tt.postID).
+				Return(model.Post{ID: tt.postID, CommentsEnabled: true}, nil)
 
 			tt.setup(ms, cap, ret)
 

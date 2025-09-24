@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"myreddit/internal/adapter/out/storage"
 	"myreddit/internal/model"
+	"myreddit/pkg/logger"
 	"myreddit/pkg/pagination"
 
 	"github.com/go-playground/validator/v10"
@@ -53,12 +55,24 @@ func (s *CommentService) CreateComment(ctx context.Context, req CreateCommentReq
 		return model.Comment{}, fmt.Errorf("text too long: %w", ErrInvalidRequest)
 	}
 
-	// check for post and for parent id
-	if _, err := s.postStorage.GetPostByID(ctx, req.PostID); err != nil {
+	post, err := s.postStorage.GetPostByID(ctx, req.PostID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return model.Comment{}, fmt.Errorf("post: %w", err)
+		}
+		logger.FromContext(ctx).Error("error getting post", "error", err)
 		return model.Comment{}, err
 	}
+	if !post.CommentsEnabled {
+		return model.Comment{}, fmt.Errorf("comments disabled: %w", ErrForbidden)
+	}
+
 	if req.ParentID != nil {
 		if _, err := s.commentStorage.GetCommentByID(ctx, *req.ParentID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return model.Comment{}, fmt.Errorf("parent-commment: %w", err)
+			}
+			logger.FromContext(ctx).Error("error getting parent-comment", "error", err)
 			return model.Comment{}, err
 		}
 	}
@@ -74,7 +88,7 @@ func (s *CommentService) CreateComment(ctx context.Context, req CreateCommentReq
 
 func (s *CommentService) GetCommentByID(ctx context.Context, commentID int64) (model.Comment, error) {
 	if commentID <= 0 {
-		return model.Comment{}, ErrInvalidRequest
+		return model.Comment{}, fmt.Errorf("commentID must be > 0: %w", ErrInvalidRequest)
 	}
 	return s.commentStorage.GetCommentByID(ctx, commentID)
 }
@@ -88,6 +102,15 @@ func (s *CommentService) GetCommentsByPost(ctx context.Context, in pagination.Pa
 
 	if err := validatePagination(in); err != nil {
 		return page, err
+	}
+
+	_, err = s.postStorage.GetPostByID(ctx, postID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return pagination.Page[model.Comment]{}, fmt.Errorf("post: %w", err)
+		}
+		logger.FromContext(ctx).Error("error getting post by id", "error", err)
+		return pagination.Page[model.Comment]{}, err
 	}
 
 	limit := in.Limit
@@ -171,6 +194,15 @@ func (s *CommentService) GetReplies(ctx context.Context, in pagination.PageReque
 		limit = MaxCommentsLimit
 	}
 	peek := limit + 1
+
+	_, err = s.postStorage.GetPostByID(ctx, postID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return pagination.Page[model.Comment]{}, fmt.Errorf("post: %w", err)
+		}
+		logger.FromContext(ctx).Error("error getting post by id", "error", err)
+		return pagination.Page[model.Comment]{}, err
+	}
 
 	afterProvided := in.AfterCursor != nil && *in.AfterCursor != ""
 	beforeProvided := in.BeforeCursor != nil && *in.BeforeCursor != ""
