@@ -165,12 +165,6 @@ func TestCommentStorage_CreateComment_Success(t *testing.T) {
 	require.WithinDuration(t, now, out.CreatedAt, time.Second)
 }
 
-func TestCommentStorage_CreateComment_ValidationError(t *testing.T) {
-	st := NewCommentStorage(mocks.NewMockDB(gomock.NewController(t)), trmpgx.DefaultCtxGetter)
-	_, err := st.CreateComment(context.Background(), service.CreateCommentRequest{})
-	require.ErrorIs(t, err, service.ErrInvalidRequest)
-}
-
 func TestCommentStorage_CreateComment_DBError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

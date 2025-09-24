@@ -12,3 +12,6 @@ down:
 	
 clear:
 	$(DC) down -v
+
+test:
+	go test ./... -cover

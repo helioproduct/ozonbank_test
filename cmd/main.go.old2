@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"myreddit/internal/adapter/out/pubsub/inmemory"
-	"myreddit/internal/adapter/out/storage/postgres"
+	inmemorybus "myreddit/internal/adapter/out/commentbus/inmemory"
+	"myreddit/internal/adapter/out/storage/inmemory"
+
 	"myreddit/internal/service"
 	"myreddit/pkg/logger"
 	"net/http"
@@ -13,13 +14,10 @@ import (
 
 	gql "myreddit/internal/adapter/in/graphql"
 
-	// "github.com/99designs/gqlgen/codegen/testserver/benchmark/generated"
-
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/extension"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
-	trmpgx "github.com/avito-tech/go-transaction-manager/drivers/pgxv5/v2"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -38,10 +36,14 @@ func main() {
 	}
 
 	// trManager := manager.Must(trmpgx.NewDefaultFactory(pool))
-	postStorage := postgres.NewPostStorage(pool, trmpgx.DefaultCtxGetter)
-	commentStorage := postgres.NewCommentStorage(pool, trmpgx.DefaultCtxGetter)
+	// postStorage := postgres.NewPostStorage(pool, trmpgx.DefaultCtxGetter)
+	postStorage := inmemory.NewPostStorage()
+	commentStorage := inmemory.NewCommentStorage()
 
-	bus := inmemory.New(100)
+	// commentStorage := postgres.NewCommentStorage(pool, trmpgx.DefaultCtxGetter)
+	// commentStorage := postgres.NewCommentStorage(pool, trmpgx.DefaultCtxGetter)
+
+	bus := inmemorybus.New(100)
 
 	postSvc := service.NewPostService(postStorage)
 	commentSvc := service.NewCommentService(commentStorage, bus)
