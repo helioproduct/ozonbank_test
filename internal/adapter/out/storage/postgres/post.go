@@ -12,20 +12,34 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	trmpgx "github.com/avito-tech/go-transaction-manager/drivers/pgxv5/v2"
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var (
 	ErrBuildingQuery = errors.New("error building sql-query")
 )
 
+//go:generate mockgen -source=post.go -destination=./mocks/db_mock.go -package=mocks
+type DB interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+
+	CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error)
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
+
+	Exec(ctx context.Context, sql string, arguments ...interface{}) (commandTag pgconn.CommandTag, err error)
+	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
+}
+
 type PostStorage struct {
-	pool   *pgxpool.Pool
+	// pool   *pgxpool.Pool
+	pool   DB
 	getter *trmpgx.CtxGetter
 }
 
-func NewPostStorage(pool *pgxpool.Pool, getter *trmpgx.CtxGetter) *PostStorage {
+func NewPostStorage(pool DB, getter *trmpgx.CtxGetter) *PostStorage {
 	return &PostStorage{
 		pool:   pool,
 		getter: getter,
@@ -95,7 +109,6 @@ func (s *PostStorage) GetPostByID(ctx context.Context, postID int64) (model.Post
 	}
 
 	tr := s.getter.DefaultTrOrDB(ctx, s.pool)
-
 	if err := tr.QueryRow(ctx, query, args...).Scan(
 		&out.ID,
 		&out.Title,
@@ -139,6 +152,7 @@ func (s *PostStorage) GetPosts(ctx context.Context, limit int) ([]model.Post, er
 	}
 
 	tr := s.getter.DefaultTrOrDB(ctx, s.pool)
+	// tr := s.queryer(ctx)
 
 	rows, err := tr.Query(ctx, query, args...)
 	if err != nil {

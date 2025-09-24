@@ -8,7 +8,8 @@ import (
 type Direction int
 
 const (
-	DirectionAfter Direction = iota
+	DirectionUnspecified Direction = iota
+	DirectionAfter
 	DirectionBefore
 )
 
