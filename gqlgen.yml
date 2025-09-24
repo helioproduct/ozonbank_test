@@ -1,0 +1,26 @@
+schema:
+  - docs/schema.graphqls
+
+exec:
+  filename: internal/adapter/in/graphql/generated.go
+  package: graphql
+
+model:
+  filename: internal/adapter/in/graphql/model/models_gen.go
+  package: gqlmodel
+
+resolver:
+  layout: follow-schema
+  dir: internal/adapter/in/graphql
+  package: graphql
+
+models:
+  Time:
+    model:
+      - github.com/99designs/gqlgen/graphql.Time
+  Cursor:
+    model:
+      - github.com/99designs/gqlgen/graphql.String
+  ID:
+    model:
+      - github.com/99designs/gqlgen/graphql.ID
