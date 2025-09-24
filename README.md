@@ -87,7 +87,8 @@ mutation {
 
 ### Пагинация
 пагинация по постам, комментариям, ответам на комментарии происходит с помощью курсоров (encoded строки от элемента списка)  
-(на основе данной статьи https://www.apollographql.com/blog/explaining-graphql-connections)  
+(на основе данной статьи  
+https://relay.dev/graphql/connections.html)
 
 
 #### пример запроса
