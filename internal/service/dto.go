@@ -96,6 +96,9 @@ func toGetCommentsRequest(postID int64, in pagination.PageRequest) (storage.GetC
 	}
 
 	var params storage.GetCommentsParams
+	params.PostID = postID
+	params.Limit = in.Limit
+
 	if before != nil {
 		params.Cursor = *before
 		params.Direction = storage.DirectionBefore
@@ -140,6 +143,8 @@ func toGetRepliesParams(postID, parentID int64, in pagination.PageRequest) (stor
 	}
 
 	var params storage.GetRepliesParams
+	params.PostID = postID
+	params.ParentID = parentID
 	params.Limit = in.Limit
 
 	if before != nil {
