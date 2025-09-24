@@ -12,7 +12,7 @@ CREATE TABLE comments (
     post_id    BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
     parent_id  BIGINT REFERENCES comments(id) ON DELETE CASCADE,
     user_id    BIGINT NOT NULL,                
-    body       TEXT   NOT NULL CHECK (char_length(body) <= 2000),
+    body       TEXT   NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
