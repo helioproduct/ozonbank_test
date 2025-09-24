@@ -189,3 +189,29 @@ CREATE INDEX idx_posts_pagination ON posts (created_at DESC, id DESC);
 если не указан "postgres" будет выбран по умолчанию inmemory
 
 
+
+
+
+### Структура проекта
+
+```bash
+── cmd
+├── config
+├── database
+├── deployments
+├── docs
+├── internal
+│   ├── adapter
+│   │   ├── in
+│   │   │   └── graphql
+│   │   └── out
+│   │       ├── commentbus
+│   │       │   └── inmemory
+│   │       └── storage
+│   │           ├── inmemory
+│   │           ├── postgres
+│   ├── app
+│   ├── model
+│   └── service
+├── pkg
+```
