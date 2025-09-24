@@ -59,7 +59,7 @@ func TestPostStorage_GetPostByID_NotFound(t *testing.T) {
 
 	st := NewPostStorage()
 
-	_, err := st.GetPostByID(context.Background(), 42)
+	_, err := st.GetPostByID(context.Background(), 10)
 	require.ErrorIs(t, err, service.ErrNotFound)
 }
 

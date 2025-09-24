@@ -146,7 +146,7 @@ func TestPostStorage_GetPostsWithCursor(t *testing.T) {
 			setupMock: func(m *mocks.MockDB) {
 				rows := pgxmock.
 					NewRows([]string{"id", "title", "body", "user_id", "comments_enabled", "created_at"}).
-					AddRow(int64(1), "t1", "b1", int64(42), true, now).
+					AddRow(int64(1), "t1", "b1", int64(50), true, now).
 					AddRow(int64(2), "t2", "b2", int64(4), true, now.Add(-time.Minute)).
 					Kind()
 
@@ -296,8 +296,8 @@ func TestPostStorage_GetPostsWithCursor_Before_Reverses(t *testing.T) {
 	rows := pgxmock.NewRows([]string{
 		"id", "title", "body", "user_id", "comments_enabled", "created_at",
 	}).
-		AddRow(int64(1), "t1", "b1", int64(42), true, now).
-		AddRow(int64(2), "t2", "b2", int64(42), true, now.Add(time.Second)).
+		AddRow(int64(1), "t1", "b1", int64(50), true, now).
+		AddRow(int64(2), "t2", "b2", int64(50), true, now.Add(time.Second)).
 		Kind()
 
 	mockDB.EXPECT().

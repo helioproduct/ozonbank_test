@@ -142,13 +142,13 @@ func TestCommentStorage_CreateComment_Success(t *testing.T) {
 	now := time.Now()
 
 	m.EXPECT().
-		QueryRow(gomock.Any(), gomock.Any(), int64(1), gomock.Nil(), int64(42), "hello").
+		QueryRow(gomock.Any(), gomock.Any(), int64(1), gomock.Nil(), int64(50), "hello").
 		Return(fakeRow{
 			scan: func(dest ...any) error {
 				*(dest[0].(*int64)) = 1001
 				*(dest[1].(*int64)) = 1
 				*(dest[2].(**int64)) = nil
-				*(dest[3].(*int64)) = 42
+				*(dest[3].(*int64)) = 50
 				*(dest[4].(*string)) = "hello"
 				*(dest[5].(*time.Time)) = now
 				return nil
@@ -157,7 +157,7 @@ func TestCommentStorage_CreateComment_Success(t *testing.T) {
 
 	st := NewCommentStorage(m, trmpgx.DefaultCtxGetter)
 	out, err := st.CreateComment(context.Background(), service.CreateCommentRequest{
-		PostID: 1, ParentID: nil, UserID: 42, Text: "hello",
+		PostID: 1, ParentID: nil, UserID: 50, Text: "hello",
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(1001), out.ID)
