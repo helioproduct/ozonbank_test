@@ -15,7 +15,6 @@ import (
 	trmpgx "github.com/avito-tech/go-transaction-manager/drivers/pgxv5/v2"
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -23,11 +22,11 @@ const (
 )
 
 type CommentStorage struct {
-	pool   *pgxpool.Pool
+	pool   DB
 	getter *trmpgx.CtxGetter
 }
 
-func NewCommentStorage(pool *pgxpool.Pool, getter *trmpgx.CtxGetter) *CommentStorage {
+func NewCommentStorage(pool DB, getter *trmpgx.CtxGetter) *CommentStorage {
 	return &CommentStorage{pool: pool, getter: getter}
 }
 
@@ -368,6 +367,7 @@ func getCommentsQueryBuilder(params storage.GetCommentsParams) (sq.SelectBuilder
 
 	return sq.SelectBuilder{}, fmt.Errorf("invalid keyset: direction must be set: %w", service.ErrInvalidRequest)
 }
+
 func getRepliesQueryBuilder(params storage.GetRepliesParams) (sq.SelectBuilder, error) {
 	limit := params.Limit
 	if limit <= 0 {

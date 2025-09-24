@@ -15,6 +15,7 @@ const (
 	MaxPostsLimit     = 250
 )
 
+//go:generate mockgen -source=posts.go -destination=./post_storage_mock.go -package=service myreddit/internal/service PostStorage
 type PostStorage interface {
 	CreatePost(ctx context.Context, post model.Post) (model.Post, error)
 	GetPostByID(ctx context.Context, postID int64) (model.Post, error)

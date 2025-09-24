@@ -20,6 +20,7 @@ type CommentService struct {
 	commentBus     CommentBus
 }
 
+//go:generate mockgen -source=comments.go -destination=./comment_storage_mock.go -package=service myreddit/internal/service CommentStorage
 type CommentStorage interface {
 	CreateComment(ctx context.Context, req CreateCommentRequest) (model.Comment, error)
 	GetCommentByID(ctx context.Context, commentID int64) (model.Comment, error)
